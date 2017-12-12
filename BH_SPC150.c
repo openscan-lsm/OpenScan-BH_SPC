@@ -11,17 +11,30 @@ static OSc_Device **g_devices;
 static size_t g_deviceCount;
 
 
+struct AcqPrivateData
+{
+	OSc_Acquisition *acquisition;
+
+	uint16_t *frameBuffer;
+	size_t width;
+	size_t height;
+	uint64_t pixelTime;
+
+	CRITICAL_SECTION mutex;
+	bool stopRequested;
+	HANDLE thread;
+	HANDLE readoutThread;
+	short streamHandle;
+
+	bool wroteHeader;
+	char fileName[OSc_MAX_STR_LEN];
+};
+
+
 struct BH_PrivateData
 {
 	short moduleNr;
-	struct {
-		OSc_Acquisition *acquisition;
-		CRITICAL_SECTION mutex;
-		bool stopRequested;
-		HANDLE thread;
-		bool wroteHeader;
-		char fileName[OSc_MAX_STR_LEN];
-	} acquisition;
+	struct AcqPrivateData acquisition;
 };
 
 
@@ -29,6 +42,18 @@ static inline struct BH_PrivateData *GetData(OSc_Device *device)
 {
 	return (struct BH_PrivateData *)(device->implData);
 }
+
+
+struct ReadoutState
+{
+	PhotInfo64 *lineBuffer;
+	size_t lineBufferSize;
+	size_t linePhotonCount;
+	size_t lineNr;
+
+	// TODO Other fields for pixel-clock-based acquisition
+	// TODO Extra state information if scanning bidirectionally
+};
 
 
 static OSc_Error EnumerateInstances(OSc_Device ***devices, size_t *count)
@@ -202,14 +227,120 @@ static short SaveData(OSc_Device *device, unsigned short *buffer, size_t size)
 }
 
 
-static DWORD WINAPI ReadLoop(void *param)
+static DWORD WINAPI ReadoutLoop(void *param)
+{
+	OSc_Device *device = (OSc_Device *)param;
+	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
+	short streamHandle = acq->streamHandle;
+
+	PhotInfo64 *photonBuffer = calloc(1024, sizeof(PhotInfo64));
+
+	const size_t lineBufferAllocSize = 1024 * 1024;
+	struct ReadoutState readoutState;
+	readoutState.lineBufferSize = lineBufferAllocSize;
+	readoutState.lineBuffer = malloc(readoutState.lineBufferSize * sizeof(PhotInfo64));
+	readoutState.linePhotonCount = 0;
+	readoutState.lineNr = 0;
+
+	for (;;)
+	{
+		uint64_t photonCount = 0;
+		short spcRet = SPC_get_photons_from_stream(streamHandle, photonBuffer, (int *)*(&photonCount));
+		switch (spcRet)
+		{
+		case 0: // No error
+			break;
+		case 1: // Stop condition
+			break;
+		case 2: // End of stream
+			break;
+		default: // Error code
+			goto cleanup;
+		}
+
+		// Create intensity image for now
+
+		uint16_t pixelTime = acq->pixelTime;
+
+		for (PhotInfo64 *photon = photonBuffer; photon < photonBuffer + photonCount; ++photon)
+		{
+			// TODO Check FIFO overflow flag
+
+			if (photon->flags & NOT_PHOTON)
+			{
+				if (photon->flags & P_MARK)
+				{
+					// Not implemented yet; current impl uses clock
+				}
+				if (photon->flags & L_MARK)
+				{
+					PhotInfo64 *bufferedPhoton = readoutState.lineBuffer;
+					PhotInfo64 *endOfLineBuffer = readoutState.lineBuffer +
+						readoutState.linePhotonCount;
+					uint64_t endOfLineTime = photon->mtime;
+					uint64_t startOfLineTime = endOfLineTime - acq->pixelTime * acq->width;
+					uint16_t pixelPhotonCount = 0;
+
+					// Discard photons occurring before the first pixel of the line
+					while (bufferedPhoton->mtime < startOfLineTime)
+						++bufferedPhoton;
+
+					for (size_t pixel = 0; pixel < acq->width; ++pixel)
+					{
+						uint64_t pixelStartTime = startOfLineTime + pixel * acq->pixelTime;
+						uint64_t nextPixelStartTime = pixelStartTime + acq->pixelTime;
+						while (bufferedPhoton < endOfLineBuffer &&
+							bufferedPhoton->mtime < nextPixelStartTime)
+						{
+							++pixelPhotonCount;
+							++bufferedPhoton;
+						}
+
+						acq->frameBuffer[readoutState.lineNr * acq->width + pixel] = pixelPhotonCount;
+						pixelPhotonCount = 0;
+					}
+
+					readoutState.linePhotonCount = 0;
+					readoutState.lineNr++;
+				}
+				if (photon->flags & F_MARK)
+				{
+					acq->acquisition->frameCallback(acq->acquisition, 0,
+						acq->frameBuffer, acq->acquisition->data);
+					readoutState.lineNr = 0;
+				}
+			}
+			else // A bona fide photon
+			{
+				if (readoutState.linePhotonCount >= readoutState.lineBufferSize)
+				{
+					readoutState.lineBufferSize += lineBufferAllocSize;
+					readoutState.lineBuffer = realloc(readoutState.lineBuffer,
+						readoutState.lineBufferSize);
+				}
+
+				memcpy(&(readoutState.lineBuffer[readoutState.linePhotonCount++]),
+					photon, sizeof(PhotInfo64));
+			}
+		}
+	}
+
+cleanup:
+	free(readoutState.lineBuffer);
+	free(photonBuffer);
+
+	SPC_close_phot_stream(acq->streamHandle);
+
+	return 0;
+}
+
+
+static DWORD WINAPI AcquisitionLoop(void *param)
 {
 	OSc_Device *device = (OSc_Device *)param;
 	short moduleNr = GetData(device)->moduleNr;
-	OSc_Acquisition *acq = GetData(device)->acquisition.acquisition;
-
-	size_t bufferSizeWords = 2 * 200000; // for SPC150
-	unsigned short *buffer = calloc(sizeof(unsigned short), bufferSizeWords);
+	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
+	short streamHandle = acq->streamHandle;
 
 	short spcRet = SPC_start_measurement(moduleNr);
 	if (spcRet != 0)
@@ -217,15 +348,18 @@ static DWORD WINAPI ReadLoop(void *param)
 		return OSc_Error_Unknown;
 	}
 
-
-	size_t wordsInBuffer = 0;
-	const size_t wordsToReadPerCycle = 20000;
+	// The flow of data is
+	// SPC hardware -> "fifo" -> "stream" -> our memory buffer -> file/OpenScan
+	// The fifo is part of the SPC device; the stream is in the PC RAM but
+	// managed by the BH library.
+	// In this thread we handle the transfer from fifo to stream.
+	// The readout thread will handle downstream from the stream.
 
 	while (!spcRet)
 	{
-		EnterCriticalSection(&(GetData(device)->acquisition.mutex));
-		bool stopRequested = GetData(device)->acquisition.stopRequested;
-		LeaveCriticalSection(&(GetData(device)->acquisition.mutex));
+		EnterCriticalSection(&(acq->mutex));
+		bool stopRequested = acq->stopRequested;
+		LeaveCriticalSection(&(acq->mutex));
 		if (stopRequested)
 			break;
 
@@ -233,50 +367,24 @@ static DWORD WINAPI ReadLoop(void *param)
 		SPC_test_state(moduleNr, &state);
 		if (state == SPC_WAIT_TRG)
 			continue; // TODO sleep briefly?
-
-		size_t wordsLeftThisCycle = wordsToReadPerCycle;
-		unsigned long wordsToReadThisCycle = (unsigned long)wordsLeftThisCycle;
-		size_t remainingBufferCapacityWords = bufferSizeWords - wordsInBuffer;
-		if (remainingBufferCapacityWords < wordsLeftThisCycle)
-			wordsToReadThisCycle = (unsigned long)remainingBufferCapacityWords;
-
-		unsigned short *bufferStart = buffer + wordsInBuffer;
-
 		if (state & SPC_FEMPTY)
 			continue; // TODO sleep briefly?
 
-		spcRet = SPC_read_fifo(moduleNr, &wordsToReadThisCycle, bufferStart);
-		size_t wordsRead = wordsToReadThisCycle;
-		wordsLeftThisCycle -= wordsRead;
-		wordsInBuffer += wordsRead;
+		// For now, use a 6 MWord read at a time. Will need to measure performance, perhaps.
+		spcRet = SPC_read_fifo_stream(streamHandle, moduleNr, 6 * 1024 * 1024);
 
-		if (state & SPC_ARMED)
-		{
-			if (wordsLeftThisCycle <= 0)
-				break;
-
-			if (state & SPC_FOVFL)
-				break; // TODO Error?
-
-			if (wordsInBuffer == bufferSizeWords)
-			{
-				spcRet = SaveData(device, buffer, 2 * wordsInBuffer);
-				wordsInBuffer = 0;
-			}
-		}
-		else if (state & SPC_TIME_OVER)
-		{
+		if (state & SPC_ARMED && state & SPC_FOVFL)
+			break; // TODO Error
+		if (state & SPC_TIME_OVER)
 			break;
-		}
 	}
 
-	SPC_stop_measurement(moduleNr);  //TODO according to Sagar needs to stop twice
-	if (wordsInBuffer > 0)
-		spcRet = SaveData(device, buffer, 2 * wordsInBuffer);
+	SPC_stop_measurement(moduleNr);
+	// It has been observed that sometimes the measurement needs to be stopped twice.
+	SPC_stop_measurement(moduleNr);
 
-	free(buffer);
-
-	// TODO Convert file format SPC -> SDT
+	// TODO Somebody has to close the stream, but that needs to happen after we have
+	// read all the photons from it. Also in the case of error/overflow.
 
 	return 0;
 }
@@ -284,6 +392,13 @@ static DWORD WINAPI ReadLoop(void *param)
 
 static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 {
+	struct AcqPrivateData *privAcq = &(GetData(device)->acquisition);
+
+	privAcq->width = ...;
+	privAcq->height = ...;
+	privAcq->frameBuffer = malloc(... * sizeof(uint16_t));
+	privAcq->pixelTime = ...;
+
 	short moduleNr = GetData(device)->moduleNr;
 	SPC_enable_sequencer(moduleNr, 0);
 
@@ -318,17 +433,32 @@ static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 	SPC_set_parameter(moduleNr, STOP_ON_TIME, 1);
 	SPC_set_parameter(moduleNr, COLLECT_TIME, 10.0); // seconds; TODO
 
-	GetData(device)->acquisition.acquisition = acq;
-	GetData(device)->acquisition.wroteHeader = false;
-	strcpy(GetData(device)->acquisition.fileName, "TODO.spc");
+	short fifoType;
+	short streamType;
+	uint64_t macroClock; // 1/10 ns units exept for DPC-230
+	SPC_get_fifo_init_vars(moduleNr, &fifoType, &streamType, (int *)&macroClock, NULL);
 
-	EnterCriticalSection(&(GetData(device)->acquisition.mutex));
-	GetData(device)->acquisition.stopRequested = false;
-	LeaveCriticalSection(&(GetData(device)->acquisition.mutex));
+	short whatToRead = 0x0001 | // valid photons
+		0x0002 | // invalid photons
+		0x0004 | // pixel markers
+		0x0008 | // line markers
+		0x0010 | // frame markers
+		0x0020; // (marker 3)
+	privAcq->streamHandle =
+		SPC_init_buf_stream(fifoType, streamType, whatToRead, (int *)*(&macroClock), 0);
+
+	privAcq->acquisition = acq;
+	privAcq->wroteHeader = false;
+	strcpy(privAcq->fileName, "TODO.spc");
+
+	EnterCriticalSection(&(privAcq->mutex));
+	privAcq->stopRequested = false;
+	LeaveCriticalSection(&(privAcq->mutex));
 
 	DWORD id;
-	GetData(device)->acquisition.thread =
-		CreateThread(NULL, 0, ReadLoop, device, 0, &id);
+	privAcq->thread = CreateThread(NULL, 0, AcquisitionLoop, device, 0, &id);
+
+	privAcq->readoutThread = CreateThread(NULL, 0, ReadoutLoop, device, 0, &id);
 	return OSc_Error_OK;
 }
 
