@@ -1,47 +1,11 @@
 #include "BH_SPC150.h"
-#include "OpenScanLibPrivate.h"
+#include "BH_SPC150Private.h"
 
-#include <Spcm_def.h>
-
-#include <Windows.h>
 #include <stdio.h>
 
 
 static OSc_Device **g_devices;
 static size_t g_deviceCount;
-
-
-struct AcqPrivateData
-{
-	OSc_Acquisition *acquisition;
-
-	uint16_t *frameBuffer;
-	size_t width;
-	size_t height;
-	uint64_t pixelTime;
-
-	CRITICAL_SECTION mutex;
-	bool stopRequested;
-	HANDLE thread;
-	HANDLE readoutThread;
-	short streamHandle;
-
-	bool wroteHeader;
-	char fileName[OSc_MAX_STR_LEN];
-};
-
-
-struct BH_PrivateData
-{
-	short moduleNr;
-	struct AcqPrivateData acquisition;
-};
-
-
-static inline struct BH_PrivateData *GetData(OSc_Device *device)
-{
-	return (struct BH_PrivateData *)(device->implData);
-}
 
 
 struct ReadoutState
@@ -50,6 +14,7 @@ struct ReadoutState
 	size_t lineBufferSize;
 	size_t linePhotonCount;
 	size_t lineNr;
+	size_t frameNr;
 
 	// TODO Other fields for pixel-clock-based acquisition
 	// TODO Extra state information if scanning bidirectionally
@@ -156,8 +121,9 @@ static OSc_Error BH_HasDetector(OSc_Device *device, bool *hasDetector)
 
 static OSc_Error BH_GetSettings(OSc_Device *device, OSc_Setting ***settings, size_t *count)
 {
-	*settings = NULL;
-	*count = 0;
+	OSc_Return_If_Error(BH_SPC150PrepareSettings(device));
+	*settings = GetData(device)->settings;
+	*count = GetData(device)->settingCount;
 	return OSc_Error_OK;
 }
 
@@ -241,6 +207,7 @@ static DWORD WINAPI ReadoutLoop(void *param)
 	readoutState.lineBuffer = malloc(readoutState.lineBufferSize * sizeof(PhotInfo64));
 	readoutState.linePhotonCount = 0;
 	readoutState.lineNr = 0;
+	readoutState.frameNr = 0;
 
 	for (;;)
 	{
@@ -260,7 +227,7 @@ static DWORD WINAPI ReadoutLoop(void *param)
 
 		// Create intensity image for now
 
-		uint16_t pixelTime = acq->pixelTime;
+		uint64_t pixelTime = acq->pixelTime;
 
 		for (PhotInfo64 *photon = photonBuffer; photon < photonBuffer + photonCount; ++photon)
 		{
@@ -307,7 +274,15 @@ static DWORD WINAPI ReadoutLoop(void *param)
 				{
 					acq->acquisition->frameCallback(acq->acquisition, 0,
 						acq->frameBuffer, acq->acquisition->data);
+					readoutState.frameNr++;
 					readoutState.lineNr = 0;
+					if (readoutState.frameNr == acq->acquisition->numberOfFrames)
+					{
+						EnterCriticalSection(&(GetData(device)->acquisition.mutex));
+						acq->stopRequested = true;
+						LeaveCriticalSection(&(GetData(device)->acquisition.mutex));
+					}
+					goto cleanup; // Exit loop
 				}
 			}
 			else // A bona fide photon
@@ -370,8 +345,9 @@ static DWORD WINAPI AcquisitionLoop(void *param)
 		if (state & SPC_FEMPTY)
 			continue; // TODO sleep briefly?
 
-		// For now, use a 6 MWord read at a time. Will need to measure performance, perhaps.
-		spcRet = SPC_read_fifo_stream(streamHandle, moduleNr, 6 * 1024 * 1024);
+		// For now, use a 1 MWord read at a time. Will need to measure performance, perhaps.
+		unsigned long words = 1 * 1024 * 1024;
+		spcRet = SPC_read_fifo_to_stream(streamHandle, moduleNr, &words);
 
 		if (state & SPC_ARMED && state & SPC_FOVFL)
 			break; // TODO Error
@@ -394,49 +370,40 @@ static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 {
 	struct AcqPrivateData *privAcq = &(GetData(device)->acquisition);
 
-	privAcq->width = ...;
-	privAcq->height = ...;
-	privAcq->frameBuffer = malloc(... * sizeof(uint16_t));
-	privAcq->pixelTime = ...;
-
 	short moduleNr = GetData(device)->moduleNr;
+	SPCdata spcData;
+	short spcRet = SPC_get_parameters(moduleNr, &spcData);
+	if (spcRet)
+		return OSc_Error_Unknown;
+
+	privAcq->width = spcData.scan_size_x;
+	privAcq->height = spcData.scan_size_y;
+	size_t nPixels = privAcq->width * privAcq->height;
+	privAcq->frameBuffer = malloc(nPixels * sizeof(uint16_t));
+	privAcq->pixelTime = 50000; // Units of 0.1 ns (same as macro clock); TODO get this from scanner
+
 	SPC_enable_sequencer(moduleNr, 0);
 
-	float mode;
-	SPC_get_parameter(moduleNr, MODE, &mode);
-	if (mode != ROUT_OUT && mode != FIFO_32M)
-	{
-		SPC_set_parameter(moduleNr, MODE, ROUT_OUT);
-	}
+	if (spcData.mode != ROUT_OUT && spcData.mode != FIFO_32M)
+		spcData.mode = ROUT_OUT;
 
-	short fifoType = mode == ROUT_OUT ? FIFO_150 : FIFO_IMG;
-	unsigned long fifo_size = 16 * 262144;  // 4194304 ( 4M ) 16-bit words for SPC150
+	spcData.routing_mode &= 0xfff8;
+	spcData.routing_mode |= spcData.scan_polarity & 0x07;
 
-	uint32_t scanPolarity;
-	SPC_get_parameter(moduleNr, SCAN_POLARITY, (float *)&scanPolarity);
-
-	uint32_t routingMode;
-	SPC_get_parameter(moduleNr, ROUTING_MODE, (float *)&routingMode);
-	routingMode &= 0xfff8;
-	routingMode |= scanPolarity & 0x07;
-
-	SPC_get_parameter(moduleNr, MODE, &mode);
-	if (mode == ROUT_OUT)
-		routingMode |= 0x0f00;
+	if (spcData.mode == ROUT_OUT)
+		spcData.routing_mode |= 0x0f00;
 	else
-		routingMode |= 0x0800;
+		spcData.routing_mode |= 0x0800;
 
-	SPC_set_parameter(moduleNr, ROUTING_MODE, *(float *)&routingMode);
-	SPC_set_parameter(moduleNr, SCAN_POLARITY, *(float *)&scanPolarity);
+	spcData.stop_on_ovfl = 0;
+	spcData.stop_on_time = 0; // We explicitly stop after the desired number of frames
 
-	SPC_set_parameter(moduleNr, STOP_ON_OVFL, 0);
-	SPC_set_parameter(moduleNr, STOP_ON_TIME, 1);
-	SPC_set_parameter(moduleNr, COLLECT_TIME, 10.0); // seconds; TODO
+	SPC_set_parameters(moduleNr, &spcData);
 
 	short fifoType;
 	short streamType;
-	uint64_t macroClock; // 1/10 ns units exept for DPC-230
-	SPC_get_fifo_init_vars(moduleNr, &fifoType, &streamType, (int *)&macroClock, NULL);
+	int initMacroClock;
+	SPC_get_fifo_init_vars(moduleNr, &fifoType, &streamType, &initMacroClock, NULL);
 
 	short whatToRead = 0x0001 | // valid photons
 		0x0002 | // invalid photons
@@ -445,7 +412,7 @@ static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 		0x0010 | // frame markers
 		0x0020; // (marker 3)
 	privAcq->streamHandle =
-		SPC_init_buf_stream(fifoType, streamType, whatToRead, (int *)*(&macroClock), 0);
+		SPC_init_buf_stream(fifoType, streamType, whatToRead, initMacroClock, 0);
 
 	privAcq->acquisition = acq;
 	privAcq->wroteHeader = false;
@@ -457,7 +424,6 @@ static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 
 	DWORD id;
 	privAcq->thread = CreateThread(NULL, 0, AcquisitionLoop, device, 0, &id);
-
 	privAcq->readoutThread = CreateThread(NULL, 0, ReadoutLoop, device, 0, &id);
 	return OSc_Error_OK;
 }
@@ -475,5 +441,3 @@ static OSc_Error BH_StopDetector(OSc_Device *device, OSc_Acquisition *acq)
 	GetData(device)->acquisition.stopRequested = true;
 	LeaveCriticalSection(&(GetData(device)->acquisition.mutex));
 }
-
-
