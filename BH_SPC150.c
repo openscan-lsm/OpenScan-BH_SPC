@@ -28,6 +28,7 @@ static OSc_Error EnumerateInstances(OSc_Device ***devices, size_t *count)
 	struct BH_PrivateData *data = calloc(1, sizeof(struct BH_PrivateData));
 	data->moduleNr = 0; // TODO for multiple modules
 	InitializeCriticalSection(&(data->acquisition.mutex));
+	InitializeConditionVariable(&(data->acquisition.acquisitionFinishCondition));
 
 	OSc_Device *device;
 	OSc_Error err;
@@ -128,10 +129,46 @@ static OSc_Error BH_GetSettings(OSc_Device *device, OSc_Setting ***settings, siz
 }
 
 
+static OSc_Error BH_GetAllowedResolutions(OSc_Device *device, size_t **widths, size_t **heights, size_t *count)
+{
+	static size_t resolutions[] = { 256, 512, 1024, 2048 };
+	*widths = *heights = resolutions;
+	*count = sizeof(resolutions) / sizeof(size_t);
+	return OSc_Error_OK;
+}
+
+
+static OSc_Error BH_GetResolution(OSc_Device *device, size_t *width, size_t *height)
+{
+	SPCdata data;
+	short spcRet = SPC_get_parameters(GetData(device)->moduleNr, &data);
+	if (spcRet)
+		return OSc_Error_Unknown;
+
+	*width = data.scan_size_x;
+	*height = data.scan_size_y;
+	return OSc_Error_OK;
+}
+
+
+static OSc_Error BH_SetResolution(OSc_Device *device, size_t width, size_t height)
+{
+	short spcRet = SPC_set_parameter(GetData(device)->moduleNr,
+		SCAN_SIZE_X, (float)width);
+	if (spcRet)
+		return OSc_Error_Unknown;
+	spcRet = SPC_set_parameter(GetData(device)->moduleNr,
+		SCAN_SIZE_Y, (float)height);
+	if (spcRet)
+		return OSc_Error_Unknown;
+	return OSc_Error_OK;
+}
+
+
 static OSc_Error BH_GetImageSize(OSc_Device *device, uint32_t *width, uint32_t *height)
 {
-	*width = *height = 16; // TODO
-	return OSc_Error_OK;
+	// Currently all image sizes match the current resolution
+	return BH_GetResolution(device, width, height);
 }
 
 
@@ -306,6 +343,11 @@ cleanup:
 
 	SPC_close_phot_stream(acq->streamHandle);
 
+	EnterCriticalSection(&(acq->mutex));
+	acq->isRunning = false;
+	LeaveCriticalSection(&(acq->mutex));
+	WakeAllConditionVariable(&(acq->acquisitionFinishCondition));
+
 	return 0;
 }
 
@@ -369,6 +411,18 @@ static DWORD WINAPI AcquisitionLoop(void *param)
 static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 {
 	struct AcqPrivateData *privAcq = &(GetData(device)->acquisition);
+
+	EnterCriticalSection(&(privAcq->mutex));
+	{
+		if (privAcq->isRunning)
+		{
+			LeaveCriticalSection(&(privAcq->mutex));
+			return OSc_Error_Acquisition_Running;
+		}
+		privAcq->stopRequested = false;
+		privAcq->isRunning = true;
+	}
+	LeaveCriticalSection(&(privAcq->mutex));
 
 	short moduleNr = GetData(device)->moduleNr;
 	SPCdata spcData;
@@ -441,3 +495,49 @@ static OSc_Error BH_StopDetector(OSc_Device *device, OSc_Acquisition *acq)
 	GetData(device)->acquisition.stopRequested = true;
 	LeaveCriticalSection(&(GetData(device)->acquisition.mutex));
 }
+
+
+static OSc_Error BH_IsRunning(OSc_Device *device, bool *isRunning)
+{
+	EnterCriticalSection(&(GetData(device)->acquisition.mutex));
+	*isRunning = GetData(device)->acquisition.isRunning;
+	LeaveCriticalSection(&(GetData(device)->acquisition.mutex));
+	return OSc_Error_OK;
+}
+
+
+static OSc_Error BH_Wait(OSc_Device *device)
+{
+	struct AcqPrivateData *acq = &GetData(device)->acquisition;
+	OSc_Error err = OSc_Error_OK;
+
+	EnterCriticalSection(&acq->mutex);
+	while (acq->isRunning)
+		SleepConditionVariableCS(&acq->acquisitionFinishCondition, &acq->mutex, INFINITE);
+	LeaveCriticalSection(&acq->mutex);
+	return err;
+}
+
+
+struct OSc_Device_Impl BH_TCSCP150_Device_Impl = {
+	.GetModelName = BH_GetModelName,
+	.GetInstances = BH_GetInstances,
+	.ReleaseInstance = BH_ReleaseInstance,
+	.GetName = BH_GetName,
+	.Open = BH_Open,
+	.Close = BH_Close,
+	.HasScanner = BH_HasScanner,
+	.HasDetector = BH_HasDetector,
+	.GetSettings = BH_GetSettings,
+	.GetAllowedResolutions = BH_GetAllowedResolutions,
+	.GetResolution = BH_GetResolution,
+	.SetResolution = BH_SetResolution,
+	.GetImageSize = BH_GetImageSize,
+	.GetNumberOfChannels = BH_GetNumberOfChannels,
+	.GetBytesPerSample = BH_GetBytesPerSample,
+	.ArmDetector = BH_ArmDetector,
+	.StartDetector = BH_StartDetector,
+	.StopDetector = BH_StopDetector,
+	.IsRunning = BH_IsRunning,
+	.Wait = BH_Wait,
+};

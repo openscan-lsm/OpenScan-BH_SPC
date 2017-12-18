@@ -17,7 +17,9 @@ struct AcqPrivateData
 	uint64_t pixelTime;
 
 	CRITICAL_SECTION mutex;
+	CONDITION_VARIABLE acquisitionFinishCondition;
 	bool stopRequested;
+	bool isRunning;
 	HANDLE thread;
 	HANDLE readoutThread;
 	short streamHandle;
