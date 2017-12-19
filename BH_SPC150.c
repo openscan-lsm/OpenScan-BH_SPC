@@ -102,6 +102,15 @@ static OSc_Error BH_Open(OSc_Device *device)
 
 static OSc_Error BH_Close(OSc_Device *device)
 {
+	struct AcqPrivateData *acq = &GetData(device)->acquisition;
+	EnterCriticalSection(&acq->mutex);
+	acq->stopRequested = true;
+	while (acq->isRunning)
+		SleepConditionVariableCS(&acq->acquisitionFinishCondition, &acq->mutex, INFINITE);
+	LeaveCriticalSection(&acq->mutex);
+
+	DeleteCriticalSection(&acq->mutex);
+
 	return OSc_Error_OK;
 }
 
