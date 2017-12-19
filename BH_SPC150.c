@@ -177,7 +177,13 @@ static OSc_Error BH_SetResolution(OSc_Device *device, size_t width, size_t heigh
 static OSc_Error BH_GetImageSize(OSc_Device *device, uint32_t *width, uint32_t *height)
 {
 	// Currently all image sizes match the current resolution
-	return BH_GetResolution(device, width, height);
+	size_t w, h;
+	OSc_Error err = BH_GetResolution(device, &w, &h);
+	if (err != OSc_Error_OK)
+		return err;
+	*width = (uint32_t)w;
+	*height = (uint32_t)h;
+	return err;
 }
 
 
@@ -503,6 +509,7 @@ static OSc_Error BH_StopDetector(OSc_Device *device, OSc_Acquisition *acq)
 	EnterCriticalSection(&(GetData(device)->acquisition.mutex));
 	GetData(device)->acquisition.stopRequested = true;
 	LeaveCriticalSection(&(GetData(device)->acquisition.mutex));
+	return OSc_Error_OK;
 }
 
 
