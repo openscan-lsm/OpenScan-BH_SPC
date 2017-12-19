@@ -110,8 +110,6 @@ static OSc_Error BH_Close(OSc_Device *device)
 		SleepConditionVariableCS(&acq->acquisitionFinishCondition, &acq->mutex, INFINITE);
 	LeaveCriticalSection(&acq->mutex);
 
-	DeleteCriticalSection(&acq->mutex);
-
 	return OSc_Error_OK;
 }
 
