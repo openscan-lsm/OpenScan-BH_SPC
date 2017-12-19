@@ -23,6 +23,16 @@ struct ReadoutState
 
 static OSc_Error EnumerateInstances(OSc_Device ***devices, size_t *count)
 {
+
+	short spcErr = SPC_init("spcm.ini");
+	if (spcErr < 0)
+	{
+		char msg[OSc_MAX_STR_LEN + 1] = "Cannot initialize BH SPC150 using: ";
+		strcat(msg, "spcm.ini");
+		OSc_Log_Error(NULL, msg);
+		return OSc_Error_Unknown;
+	}
+
 	// For now, support just one board
 
 	struct BH_PrivateData *data = calloc(1, sizeof(struct BH_PrivateData));
@@ -42,15 +52,6 @@ static OSc_Error EnumerateInstances(OSc_Device ***devices, size_t *count)
 	*devices = malloc(sizeof(OSc_Device *));
 	*count = 1;
 	(*devices)[0] = device;
-
-	short spcErr = SPC_init("spcm.ini");
-	if (spcErr < 0)
-	{
-		char msg[OSc_MAX_STR_LEN + 1] = "Cannot initialize BH SPC150 using: ";
-		strcat(msg, "spcm.ini");
-		OSc_Log_Error(NULL, msg);
-		return OSc_Error_Unknown;
-	}
 
 	return OSc_Error_OK;
 }
