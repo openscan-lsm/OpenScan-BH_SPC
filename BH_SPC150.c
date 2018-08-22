@@ -23,14 +23,14 @@ struct ReadoutState
 
 static OSc_Error EnumerateInstances(OSc_Device ***devices, size_t *count)
 {
-
+	//short spcErr = SPC_close();  // close SPC150 if it remains open from previous session
 	short spcErr = SPC_init("spcm.ini");
 	if (spcErr < 0)
 	{
 		char msg[OSc_MAX_STR_LEN + 1] = "Cannot initialize BH SPC150 using: ";
 		strcat(msg, "spcm.ini");
 		OSc_Log_Error(NULL, msg);
-		return OSc_Error_Unknown;
+		return OSc_Error_SPC150_CANNOT_OPEN_FILE;
 	}
 
 	// For now, support just one board
@@ -89,12 +89,19 @@ static OSc_Error BH_GetName(OSc_Device *device, char *name)
 
 static OSc_Error BH_Open(OSc_Device *device)
 {
+	SPCModInfo m_ModInfo;
+	// inUse = -1 means SPC150 board was still being used by previous session i.e. the code didn't exit correctly
+	// TODO: need to find the way to exit the board when the software crashes
+	short spcErr = SPC_get_module_info(GetData(device)->moduleNr, (SPCModInfo *)&m_ModInfo);
+	//if (m_ModInfo.in_use == -1)
+	//	SPC_set_mode(SPC_HARD, 1, 1);  // force to take control of the active board
+	
 	SPCMemConfig memInfo;
-	short spcErr = SPC_configure_memory(GetData(device)->moduleNr,
-		8 /* TODO */, 0 /* TODO */, &memInfo);
+	spcErr = SPC_configure_memory(GetData(device)->moduleNr,
+		-1 /* TODO */, 0 /* TODO */, &memInfo);
 	if (spcErr < 0 || memInfo.maxpage == 0)
 	{
-		return OSc_Error_Unknown;
+		return OSc_Error_SPC150_MODULE_NOT_ACTIVE;
 	}
 
 	return OSc_Error_OK;
