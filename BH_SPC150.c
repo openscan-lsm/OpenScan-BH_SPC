@@ -451,8 +451,8 @@ static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 	if (spcRet)
 		return OSc_Error_Unknown;
 
-	privAcq->width = spcData.scan_size_x;
-	privAcq->height = spcData.scan_size_y;
+	privAcq->width = (size_t)spcData.scan_size_x;
+	privAcq->height = (size_t)spcData.scan_size_y;
 	size_t nPixels = privAcq->width * privAcq->height;
 	privAcq->frameBuffer = malloc(nPixels * sizeof(uint16_t));
 	privAcq->pixelTime = 50000; // Units of 0.1 ns (same as macro clock); TODO get this from scanner
@@ -473,12 +473,16 @@ static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 	spcData.stop_on_ovfl = 0;
 	spcData.stop_on_time = 0; // We explicitly stop after the desired number of frames
 
-	SPC_set_parameters(moduleNr, &spcData);
+	spcRet = SPC_set_parameters(moduleNr, &spcData);
+	if (spcRet)
+		return OSc_Error_Unknown;
 
 	short fifoType;
 	short streamType;
 	int initMacroClock;
-	SPC_get_fifo_init_vars(moduleNr, &fifoType, &streamType, &initMacroClock, NULL);
+	spcRet = SPC_get_fifo_init_vars(moduleNr, &fifoType, &streamType, &initMacroClock, NULL);
+	if (spcRet)
+		return OSc_Error_Unknown;
 
 	short whatToRead = 0x0001 | // valid photons
 		0x0002 | // invalid photons
