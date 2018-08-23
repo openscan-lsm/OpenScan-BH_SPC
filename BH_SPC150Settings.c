@@ -12,8 +12,10 @@ OSc_Error BH_SPC150PrepareSettings(OSc_Device *device)
 
 	OSc_Setting *ss[] = {
 		NULL, // ...
-	};
+	};  // OSc_Device_Get_Settings() returns count = 1 when this has NULL inside
 	size_t nSettings = sizeof(ss) / sizeof(OSc_Setting *);
+	if (*ss == NULL)
+		nSettings = 0;
 	OSc_Setting **settings = malloc(sizeof(ss));
 	memcpy(settings, ss, sizeof(ss));
 
