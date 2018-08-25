@@ -207,6 +207,8 @@ static OSc_Error BH_GetBytesPerSample(OSc_Device *device, uint32_t *bytesPerSamp
 }
 
 
+// TODO: this needs to called somewhere in the code; right now it is not used
+// and that is why we did not see any .spc data saved to disk
 static short SaveData(OSc_Device *device, unsigned short *buffer, size_t size)
 {
 	short moduleNr = GetData(device)->moduleNr;
@@ -457,7 +459,9 @@ static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 	privAcq->frameBuffer = malloc(nPixels * sizeof(uint16_t));
 	privAcq->pixelTime = 50000; // Units of 0.1 ns (same as macro clock); TODO get this from scanner
 
-	SPC_enable_sequencer(moduleNr, 0);
+	spcRet = SPC_enable_sequencer(moduleNr, 0);
+	if (spcRet)
+		return OSc_Error_Unknown;
 
 	if (spcData.mode != ROUT_OUT && spcData.mode != FIFO_32M)
 		spcData.mode = ROUT_OUT;
@@ -495,7 +499,7 @@ static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 
 	privAcq->acquisition = acq;
 	privAcq->wroteHeader = false;
-	strcpy(privAcq->fileName, "TODO.spc");
+	strcpy(privAcq->fileName, "D:\\Documents\\BH_data\\TODO.spc");
 
 	EnterCriticalSection(&(privAcq->mutex));
 	privAcq->stopRequested = false;
