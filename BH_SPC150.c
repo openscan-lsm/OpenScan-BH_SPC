@@ -450,6 +450,13 @@ static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 	short moduleNr = GetData(device)->moduleNr;
 	SPCdata spcData;
 	short spcRet = SPC_get_parameters(moduleNr, &spcData);
+	spcData.scan_size_x = 256;
+	spcData.scan_size_y = 256;
+	spcData.adc_resolution = 8;
+	spcRet = SPC_set_parameters(moduleNr, &spcData);
+
+	spcRet = SPC_get_parameters(moduleNr, &spcData); // debugging purpose
+
 	if (spcRet)
 		return OSc_Error_Unknown;
 
