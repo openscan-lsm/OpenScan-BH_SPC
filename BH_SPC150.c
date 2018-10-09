@@ -160,8 +160,11 @@ static OSc_Error BH_GetResolution(OSc_Device *device, size_t *width, size_t *hei
 	if (spcRet)
 		return OSc_Error_Unknown;
 
-	*width = data.scan_size_x;
-	*height = data.scan_size_y;
+	//*width = data.scan_size_x;
+	//*height = data.scan_size_y;
+
+	*height = 256;
+	*width = 256;
 	return OSc_Error_OK;
 }
 
@@ -460,8 +463,14 @@ static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 	if (spcRet)
 		return OSc_Error_Unknown;
 
-	privAcq->width = (size_t)spcData.scan_size_x;
-	privAcq->height = (size_t)spcData.scan_size_y;
+	//privAcq->width = (size_t)spcData.scan_size_x;
+	//privAcq->height = (size_t)spcData.scan_size_y;
+
+	//this size needs to be taken care by the privAcq structure as the board's scan_size_x does not matter in FIFO mode
+
+	privAcq->width = 256;
+	privAcq->height =256 ;
+
 	size_t nPixels = privAcq->width * privAcq->height;
 	privAcq->frameBuffer = malloc(nPixels * sizeof(uint16_t));
 	privAcq->pixelTime = 50000; // Units of 0.1 ns (same as macro clock); TODO get this from scanner
