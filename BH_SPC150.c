@@ -23,8 +23,11 @@ struct ReadoutState
 
 static OSc_Error EnumerateInstances(OSc_Device ***devices, size_t *count)
 {
-	//short spcErr = SPC_close();  // close SPC150 if it remains open from previous session
-	short spcErr = SPC_init("spcm.ini");
+	short spcErr;
+	//short status=SPC_get_init_status();
+
+	//spcErr = SPC_close();  // close SPC150 if it remains open from previous session
+	spcErr = SPC_init("spcm.ini");
 	if (spcErr < 0)
 	{
 		char msg[OSc_MAX_STR_LEN + 1] = "Cannot initialize BH SPC150 using: ";
@@ -263,17 +266,21 @@ static DWORD WINAPI ReadoutLoop(void *param)
 	short streamHandle = acq->streamHandle;
 
 	PhotInfo64 *photonBuffer = calloc(1024, sizeof(PhotInfo64));
+	int photons_to_read = 15000000;
 
 	const size_t lineBufferAllocSize = 1024 * 1024;
 	struct ReadoutState readoutState;
 	readoutState.lineBufferSize = lineBufferAllocSize;
+
 	readoutState.lineBuffer = malloc(readoutState.lineBufferSize * sizeof(PhotInfo64));
 	readoutState.linePhotonCount = 0;
 	readoutState.lineNr = 0;
 	readoutState.frameNr = 0;
-
+	
+	int readLoopCount = 0;
 	for (;;)
 	{
+		readLoopCount++;
 		uint64_t photonCount = 0;
 		short spcRet = SPC_get_photons_from_stream(streamHandle, photonBuffer, (int *)*(&photonCount));
 		switch (spcRet)
@@ -397,9 +404,10 @@ static DWORD WINAPI AcquisitionLoop(void *param)
 	// managed by the BH library.
 	// In this thread we handle the transfer from fifo to stream.
 	// The readout thread will handle downstream from the stream.
-
+	int loopcount = 0;
 	while (!spcRet)
 	{
+		loopcount++;
 		EnterCriticalSection(&(acq->mutex));
 		bool stopRequested = acq->stopRequested;
 		LeaveCriticalSection(&(acq->mutex));
@@ -433,6 +441,389 @@ static DWORD WINAPI AcquisitionLoop(void *param)
 	return 0;
 }
 
+static DWORD WINAPI AcquireExtractLoop(void *param)
+//static short AcquireExtractLoop(OSc_Device *device)
+{
+	OSc_Device *device = (OSc_Device *)param;
+	short moduleNr = GetData(device)->moduleNr;
+	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
+	short streamHandle = acq->streamHandle;
+
+	unsigned long photons_to_read = 15000000;
+	unsigned long photon_left= photons_to_read;
+	unsigned long phot_in_buf = 0;
+	unsigned long phot_cnt, current_cnt;
+	PhotInfo64 phot_info64, *phot_buffer, *phot_ptr;
+	phot_buffer = (PhotInfo64 *)calloc(photons_to_read, sizeof(PhotInfo64));
+
+	short spcRet = SPC_start_measurement(moduleNr);
+	if (spcRet != 0)
+	{
+		return OSc_Error_Unknown;
+	}
+
+	// The flow of data is
+	// SPC hardware -> "fifo" -> "stream" -> our memory buffer -> file/OpenScan
+	// The fifo is part of the SPC device; the stream is in the PC RAM but
+	// managed by the BH library.
+	// In this thread we handle the transfer from fifo to stream.
+	// The readout thread will handle downstream from the stream.
+	int loopcount = 0;
+	while (!spcRet)
+	{
+		loopcount++;
+		EnterCriticalSection(&(acq->mutex));
+		bool stopRequested = acq->stopRequested;
+		LeaveCriticalSection(&(acq->mutex));
+		if (stopRequested)
+			break;
+
+		short state;
+		SPC_test_state(moduleNr, &state);
+
+		current_cnt = photon_left * 2;//2
+		phot_cnt = photon_left;
+		phot_ptr = (PhotInfo64 *)&phot_buffer[phot_in_buf];
+
+		if (state & SPC_ARMED) {
+
+			if (state == SPC_WAIT_TRG)
+				continue; // TODO sleep briefly?
+			if (state & SPC_FEMPTY)
+				continue; // TODO sleep briefly?
+
+
+			spcRet = SPC_read_fifo_to_stream(streamHandle, moduleNr, &current_cnt);
+			if (spcRet < 0)
+				break;
+			spcRet = SPC_get_photons_from_stream(streamHandle, phot_ptr, (int *)&phot_cnt);
+			if (spcRet == 2 || spcRet == -SPC_STR_NO_START || spcRet == -SPC_STR_NO_STOP) {
+				// end of the stream or start/stop condition not found yet
+				// during running measurement these errors should be ignored
+				spcRet = 0;
+			}
+
+
+			//conditional values of return TODO
+
+			photon_left -= phot_cnt;
+			phot_in_buf += phot_cnt;
+
+			if (spcRet == 1) // stop condition reached
+				break;
+
+			if (phot_in_buf >= photons_to_read)
+				break;   // required no of photons read already
+
+
+			if (state & SPC_FOVFL)
+				break;
+
+			if((state & SPC_COLTIM_OVER)|(state & SPC_TIME_OVER))
+				break;
+			//if (loopcount > 300000)//this is a temporary measure// should exit before reaching here
+				//break;
+		}
+		
+	}
+
+	SPC_stop_measurement(moduleNr);
+	// It has been observed that sometimes the measurement needs to be stopped twice.
+	SPC_stop_measurement(moduleNr);
+
+	// TODO Somebody has to close the stream, but that needs to happen after we have
+	// read all the photons from it. Also in the case of error/overflow.
+
+	while (photon_left && !spcRet) {
+		// get rest photons from the stream
+		phot_cnt = photon_left;
+		phot_ptr = (PhotInfo64 *)&phot_buffer[phot_in_buf];
+		spcRet = SPC_get_photons_from_stream(streamHandle, phot_ptr, (int *)&phot_cnt);
+		photon_left -= phot_cnt; phot_in_buf += phot_cnt;
+	}
+	EnterCriticalSection(&(acq->mutex));
+	acq->isRunning = false;
+	LeaveCriticalSection(&(acq->mutex));
+	WakeAllConditionVariable(&(acq->acquisitionFinishCondition));
+	return 0;
+}
+
+void BH_fifo_measurement() {
+	float curr_mode;
+	unsigned short offset_value, *buffer, *ptr;
+	unsigned long photons_to_read, words_to_read, words_left;
+	char phot_fname[80];
+	short state;
+	short spcRet=0;
+	// in most of the modules types with FIFO mode it is possible to stop the fifo measurement 
+	//   after specified Collection time
+	short fifo_stopt_possible = 1;
+	short first_write = 1;
+	short module_type = M_SPC150;
+	short fifo_type; 
+	short act_mod = 0;
+	unsigned long fifo_size;
+	unsigned long max_ph_to_read, max_words_in_buf, words_in_buf = 0 , current_cnt;
+
+
+	
+	// before the measurement sequencer must be disabled
+	SPC_enable_sequencer(act_mod, 0);
+	// set correct measurement mode
+
+	SPC_get_parameter(act_mod, MODE, &curr_mode);
+
+	switch (module_type) {
+	case M_SPC130:
+		break;
+
+	case M_SPC600:
+	case M_SPC630:
+		break;
+
+	case M_SPC830:
+		break;
+
+	case M_SPC140:
+		break;
+
+	case M_SPC150:
+		// ROUT_OUT in 150 == fifo
+		if (curr_mode != ROUT_OUT &&  curr_mode != FIFO_32M) {
+			SPC_set_parameter(act_mod, MODE, ROUT_OUT);
+			curr_mode = ROUT_OUT;
+		}
+		fifo_size = 16 * 262144;  // 4194304 ( 4M ) 16-bit words
+		if (curr_mode == ROUT_OUT)
+			fifo_type = FIFO_150;
+		else  // FIFO_IMG ,  marker 3 can be enabled via ROUTING_MODE
+			fifo_type = FIFO_IMG;
+		break;
+
+	}
+	unsigned short rout_mode, scan_polarity;
+	float fval;
+
+	// ROUTING_MODE sets active markers and their polarity in Fifo mode ( not for FIFO32_M)
+	// bits 8-11 - enable Markers0-3,  bits 12-15 - active edge of Markers0-3
+
+	// SCAN_POLARITY sets markers polarity in FIFO32_M mode
+	SPC_get_parameter(act_mod, SCAN_POLARITY, &fval);
+	scan_polarity = fval;
+	SPC_get_parameter(act_mod, ROUTING_MODE, &fval);
+	rout_mode = fval;
+
+	// use the same polarity of markers in Fifo_Img and Fifo mode
+	rout_mode &= 0xfff8;
+	rout_mode |= scan_polarity & 0x7;
+
+	SPC_get_parameter(act_mod, MODE, &curr_mode);
+	if (curr_mode == ROUT_OUT) {
+		rout_mode |= 0xf00;     // markers 0-3 enabled
+		SPC_set_parameter(act_mod, ROUTING_MODE, rout_mode);
+	}
+	if (curr_mode == FIFO_32M) {
+		rout_mode |= 0x800;     // additionally enable marker 3
+		SPC_set_parameter(act_mod, ROUTING_MODE, rout_mode);
+		SPC_set_parameter(act_mod, SCAN_POLARITY, scan_polarity);
+	}
+
+	// switch off stop_on_overfl
+	SPC_set_parameter(act_mod, STOP_ON_OVFL, 0);
+	SPC_set_parameter(act_mod, STOP_ON_TIME, 0);
+	if (fifo_stopt_possible) {
+
+		SPC_set_parameter(act_mod, STOP_ON_TIME, 1);
+		//SPC_set_parameter ( act_mod, COLLECT_TIME, 60 ); // default  - stop after 10 sec
+	}
+
+
+	if (module_type == M_SPC830)
+		max_ph_to_read = 2000000; // big fifo, fast DMA readout
+	else
+		//max_ph_to_read = 16384;
+		max_ph_to_read = 200000;
+	if (fifo_type == FIFO_48)
+		max_words_in_buf = 3 * max_ph_to_read;
+	else
+		max_words_in_buf = 1 * max_ph_to_read;
+
+	////////
+
+	buffer = (unsigned short *)malloc(max_words_in_buf * sizeof(unsigned short));
+
+	photons_to_read = 100000000;
+
+	words_to_read = 2 * photons_to_read; //max photon in one acquisition cycle
+
+	words_left = words_to_read;
+	strcpy(phot_fname, "test_photons1.spc");//name will later be collected from user //FLIMTODO
+	buffer = (unsigned short *)malloc(max_words_in_buf * sizeof(unsigned short));
+	int totalWord = 0;
+	int loopcount = 0;
+	int totalPhot = 0;
+	int markerLine = 0;
+	int markerFrame = 0;
+	int flimPixelType = 0;
+	int flimPhotonType = 0;
+
+	int max_buff_reached = 0;
+
+	//for (int i = 0; i < 512; i++) {
+	//	for (int j = 0; j < 512; j++) {
+	//		LTmatrix[i][j] = 0;
+	//	}
+	//}
+	unsigned long lineFrameMacroTime = 0;
+	int countprev = 0;
+	int linCount = 0;
+	int pixCount = 0;
+	int pixelTime = 150;//This is in terms of macro time
+	int frameCount = 0;
+	int maxMacroTime = 0;
+	unsigned short PrevMacroTIme = 0;
+	unsigned long totMacroTime = 0;
+	
+	while (!spcRet) {
+		loopcount++;
+		// now test SPC state and read photons
+		SPC_test_state(act_mod, &state);
+		// user must provide safety way out from this loop 
+		//    in case when trigger will not occur or required number of photons 
+		//          cannot be reached
+		if (state & SPC_WAIT_TRG) {   // wait for trigger                
+			continue;
+		}
+		if (words_left > max_words_in_buf - words_in_buf)
+			// limit current_cnt to the free space in buffer
+			current_cnt = max_words_in_buf - words_in_buf;
+		else
+			current_cnt = max_words_in_buf;//1*words_left; orginal code
+
+		ptr = (unsigned short *)&buffer[words_in_buf];
+
+		if (state & SPC_ARMED) {  //  system armed   //continues to get data
+			if (state & SPC_FEMPTY)
+				continue;  // Fifo is empty - nothing to read
+
+						   // before the call current_cnt contains required number of words to read from fifo
+			spcRet = SPC_read_fifo(act_mod, &current_cnt, ptr);
+
+			totalPhot += current_cnt;
+			words_left -= current_cnt;
+			if (words_left <= 0)
+				break;   // required no of photons read already
+
+			if (state & SPC_FOVFL) {
+
+
+				break;
+				//should I read the rest of the data? 
+			}
+
+			if ((state & SPC_COLTIM_OVER) | (state & SPC_TIME_OVER)) {//if overtime occured, that should be over
+																			  //there should be exit code here if time over by 10 seconds
+				break;
+
+			}
+			words_in_buf += current_cnt;
+			if (words_in_buf == max_words_in_buf) {
+				// your buffer is full, but photons are still needed 
+				// save buffer contents in the file and continue reading photons
+				max_buff_reached++;
+
+	
+				spcRet = save_photons_in_file();
+				totalWord += words_in_buf;
+				words_in_buf = 0;
+			}
+		}
+		else { //enters when SPC is not armed //NOT armed when measurement is NOT in progress
+			if (fifo_stopt_possible && (state & SPC_TIME_OVER) != 0) {
+				// measurement stopped after collection time
+				// read rest photons from the fifo
+				// before the call current_cnt contains required number of words to read from fifo
+				spcRet = SPC_read_fifo(act_mod, &current_cnt, ptr);
+				// after the call current_cnt contains number of words read from fifo  
+
+				words_left -= current_cnt;
+				words_in_buf += current_cnt; //should be reading until less than zero
+				break;
+			}
+		}
+	}
+
+	// SPC_stop_measurement should be called even if the measurement was stopped after collection time
+	//           to set DLL internal variables
+		
+	SPC_stop_measurement(act_mod);
+	SPC_stop_measurement(act_mod);
+	totalWord += words_in_buf;
+	if (words_in_buf > 0)
+		save_photons_in_file();
+
+}
+
+int save_photons_in_file() {
+	/*
+	long ret;
+	int i;
+	unsigned short first_frame[3], no_of_fifo_routing_bits;
+	unsigned long lval;
+	float fval;
+	FILE *stream;
+	char phot_fname[80];
+	short first_write = 1;
+	strcpy(phot_fname, "test_photons1.spc");//name will later be collected from user //FLIMTODO
+
+	if (first_write) {
+
+
+		no_of_fifo_routing_bits = 3; // it means 8 routing channels - default value
+									 //  set to 0 if router is not used
+
+				
+									 ///
+		first_frame[2] = 0;
+
+		ret = SPC_get_fifo_init_vars(0, NULL, NULL, NULL, &spc_header);
+		if (!ret) {
+			first_frame[0] = (unsigned short)spc_header;
+			first_frame[1] = (unsigned short)(spc_header >> 16);
+		}
+		else
+			return -1;
+		///
+
+
+		first_write = 0;
+		// write 1st frame to the file
+		stream = fopen(phot_fname, "wb");
+		if (!stream)
+			return -1;
+
+		if (fifo_type == FIFO_48)
+			fwrite((void *)&first_frame[0], 2, 3, stream); // write 3 words ( 48 bits )
+		else
+			fwrite((void *)&first_frame[0], 2, 2, stream); // write 2 words ( 32 bits )
+	}
+	else {
+		stream = fopen(phot_fname, "ab");
+		if (!stream)
+			return -1;
+		fseek(stream, 0, SEEK_END);     // set file pointer to the end
+	}
+
+	ret = fwrite((void *)buffer, 1, 2 * words_in_buf, stream); // write photons buffer
+	fclose(stream);
+	if (ret != 2 * words_in_buf)
+		return -1;     // error type in errno
+		*/
+	return 0;
+
+}
+
+
 
 static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 {
@@ -456,6 +847,7 @@ static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 	spcData.scan_size_x = 256;
 	spcData.scan_size_y = 256;
 	spcData.adc_resolution = 8;
+	spcData.collect_time = 10;
 	spcRet = SPC_set_parameters(moduleNr, &spcData);
 
 	spcRet = SPC_get_parameters(moduleNr, &spcData); // debugging purpose
@@ -522,8 +914,11 @@ static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 	LeaveCriticalSection(&(privAcq->mutex));
 
 	DWORD id;
-	privAcq->thread = CreateThread(NULL, 0, AcquisitionLoop, device, 0, &id);
-	privAcq->readoutThread = CreateThread(NULL, 0, ReadoutLoop, device, 0, &id);
+	
+	privAcq->thread = CreateThread(NULL, 0, AcquireExtractLoop, device, 0, &id);
+	//AcquireExtractLoop(device);
+	//privAcq->thread = CreateThread(NULL, 0, AcquisitionLoop, device, 0, &id);
+	//privAcq->readoutThread = CreateThread(NULL, 0, ReadoutLoop, device, 0, &id);
 	return OSc_Error_OK;
 }
 
