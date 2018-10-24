@@ -26,6 +26,14 @@ struct AcqPrivateData
 
 	bool wroteHeader;
 	char fileName[OSc_MAX_STR_LEN];
+
+	//FIFO params
+	short fifo_type;
+	unsigned long words_in_buf;
+	unsigned short *buffer;
+	short initVariableTyope;
+
+
 };
 
 

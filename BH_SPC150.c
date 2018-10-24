@@ -548,9 +548,14 @@ static DWORD WINAPI AcquireExtractLoop(void *param)
 	return 0;
 }
 
-void BH_fifo_measurement() {
+void Bh_FIFO_Loop(void *param) {
+
+	OSc_Device *device = (OSc_Device *)param;
+	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
+
+
 	float curr_mode;
-	unsigned short offset_value, *buffer, *ptr;
+	unsigned short offset_value, *ptr;
 	unsigned long photons_to_read, words_to_read, words_left;
 	char phot_fname[80];
 	short state;
@@ -650,7 +655,9 @@ void BH_fifo_measurement() {
 
 	////////
 
-	buffer = (unsigned short *)malloc(max_words_in_buf * sizeof(unsigned short));
+
+
+	acq->buffer = (unsigned short *)malloc(max_words_in_buf * sizeof(unsigned short));
 
 	photons_to_read = 100000000;
 
@@ -658,7 +665,7 @@ void BH_fifo_measurement() {
 
 	words_left = words_to_read;
 	strcpy(phot_fname, "test_photons1.spc");//name will later be collected from user //FLIMTODO
-	buffer = (unsigned short *)malloc(max_words_in_buf * sizeof(unsigned short));
+//	buffer = (unsigned short *)malloc(max_words_in_buf * sizeof(unsigned short));
 	int totalWord = 0;
 	int loopcount = 0;
 	int totalPhot = 0;
@@ -700,7 +707,7 @@ void BH_fifo_measurement() {
 		else
 			current_cnt = max_words_in_buf;//1*words_left; orginal code
 
-		ptr = (unsigned short *)&buffer[words_in_buf];
+		ptr = (unsigned short *)&(acq->buffer[words_in_buf]);
 
 		if (state & SPC_ARMED) {  //  system armed   //continues to get data
 			if (state & SPC_FEMPTY)
@@ -733,9 +740,11 @@ void BH_fifo_measurement() {
 				max_buff_reached++;
 
 	
-				spcRet = save_photons_in_file();
+				//spcRet = save_photons_in_file(acq->initVariableTyope, acq->fifo_type, words_in_buf, acq->buffer);
+				acq->words_in_buf = words_in_buf;
+				spcRet= save_photons_in_file(acq);
 				totalWord += words_in_buf;
-				words_in_buf = 0;
+				acq->words_in_buf=words_in_buf = 0;
 			}
 		}
 		else { //enters when SPC is not armed //NOT armed when measurement is NOT in progress
@@ -760,21 +769,25 @@ void BH_fifo_measurement() {
 	SPC_stop_measurement(act_mod);
 	totalWord += words_in_buf;
 	if (words_in_buf > 0)
-		save_photons_in_file();
-
+		//		save_photons_in_file(acq->initVariableTyope, acq->fifo_type, words_in_buf, acq->buffer);
+		acq->words_in_buf = words_in_buf;
+		spcRet=save_photons_in_file(acq);
+	
 }
 
-int save_photons_in_file() {
-	/*
+//int save_photons_in_file(short fifoTypeReturn, short fifo_type, unsigned long words_in_buf, short *buffer) {
+int save_photons_in_file(struct AcqPrivateData *acq) {
+	
 	long ret;
 	int i;
 	unsigned short first_frame[3], no_of_fifo_routing_bits;
 	unsigned long lval;
 	float fval;
 	FILE *stream;
+	unsigned header;
 	char phot_fname[80];
 	short first_write = 1;
-	strcpy(phot_fname, "test_photons1.spc");//name will later be collected from user //FLIMTODO
+	strcpy(phot_fname, "BH_photons.spc");//name will later be collected from user //FLIMTODO
 
 	if (first_write) {
 
@@ -786,10 +799,12 @@ int save_photons_in_file() {
 									 ///
 		first_frame[2] = 0;
 
-		ret = SPC_get_fifo_init_vars(0, NULL, NULL, NULL, &spc_header);
-		if (!ret) {
-			first_frame[0] = (unsigned short)spc_header;
-			first_frame[1] = (unsigned short)(spc_header >> 16);
+//		ret = SPC_get_fifo_init_vars(0, NULL, NULL, NULL, &spc_header);
+		
+		signed short ret = SPC_get_fifo_init_vars(0, NULL, NULL, NULL, &header);
+		if (!acq->initVariableTyope) {
+			first_frame[0] = (unsigned short)header;
+			first_frame[1] = (unsigned short)(header >> 16);
 		}
 		else
 			return -1;
@@ -802,7 +817,7 @@ int save_photons_in_file() {
 		if (!stream)
 			return -1;
 
-		if (fifo_type == FIFO_48)
+		if (acq->fifo_type == FIFO_48)
 			fwrite((void *)&first_frame[0], 2, 3, stream); // write 3 words ( 48 bits )
 		else
 			fwrite((void *)&first_frame[0], 2, 2, stream); // write 2 words ( 32 bits )
@@ -814,11 +829,11 @@ int save_photons_in_file() {
 		fseek(stream, 0, SEEK_END);     // set file pointer to the end
 	}
 
-	ret = fwrite((void *)buffer, 1, 2 * words_in_buf, stream); // write photons buffer
+	ret = fwrite((void *)acq->buffer, 1, 2 * acq->words_in_buf, stream); // write photons buffer
 	fclose(stream);
-	if (ret != 2 * words_in_buf)
+	if (ret != 2 * acq->words_in_buf)
 		return -1;     // error type in errno
-		*/
+		
 	return 0;
 
 }
@@ -892,10 +907,11 @@ static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 	short fifoType;
 	short streamType;
 	int initMacroClock;
-	spcRet = SPC_get_fifo_init_vars(moduleNr, &fifoType, &streamType, &initMacroClock, NULL);
+	spcRet=privAcq->initVariableTyope = SPC_get_fifo_init_vars(moduleNr, &fifoType, &streamType, &initMacroClock, NULL);
 	if (spcRet)
 		return OSc_Error_Unknown;
 
+	privAcq->fifo_type = fifoType;
 	short whatToRead = 0x0001 | // valid photons
 		0x0002 | // invalid photons
 		0x0004 | // pixel markers
