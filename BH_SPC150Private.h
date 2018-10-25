@@ -276,6 +276,16 @@ typedef struct {
 }MeasFCSInfo;   // information collected when FIFO measurement is finished
 
 
+typedef struct {
+	short block_no;
+	long data_offset;
+	long next_block_offset;
+	unsigned short block_type;
+	short meas_desc_block_no;
+	unsigned long lblock_no;
+	unsigned long block_length;
+} data_block_header;
+
 typedef struct _MeasureInfo {
 	char     time[9];        /* time of creation */
 	char     date[11];       /* date of creation */

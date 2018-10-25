@@ -771,10 +771,14 @@ void Bh_FIFO_Loop(void *param) {
 	SPC_stop_measurement(act_mod);
 	SPC_stop_measurement(act_mod);
 	totalWord += words_in_buf;
-	if (words_in_buf > 0)
-		//		save_photons_in_file(acq->initVariableTyope, acq->fifo_type, words_in_buf, acq->buffer);
+	if (words_in_buf > 0) {
+
 		acq->words_in_buf = words_in_buf;
-		spcRet=save_photons_in_file(acq);
+		spcRet = save_photons_in_file(acq);
+
+	}
+	//savign the photon(converted to exponential file)
+	extractPhoton(acq);
 	
 }
 
@@ -947,8 +951,7 @@ int extractPhoton(struct AcqPrivateData *acq) {
 		SPC_close_phot_stream(acq->streamHandle);
 
 	}
-	//BH_saveLTDataSDT(acq);
-	//return 0;
+
 
 	if (BH_saveLTDataSDT(acq))
 		return 0;
@@ -966,7 +969,7 @@ bool BH_saveLTDataSDT(struct AcqPrivateData *acq) {
 	MeasureInfo meas_desc;
 	BHFileBlockHeader block_header;
 	unsigned int iPhotonCountBufferSize;
-	short *iPhotonCountBuffer;//should be void*
+	short *iPhotonCountBuffer;//should be void*, but works in wiscScan
 	PhotStreamInfo stream_info;
 	PhotInfo   phot_info;
 
@@ -976,19 +979,14 @@ bool BH_saveLTDataSDT(struct AcqPrivateData *acq) {
 
 	int flagFreeBuff = 1;//1- empty
 	int stream_type = BH_STREAM;
-	SPCdata m_spc_dat;
+
 	int what_to_read = 1;   // valid photons
 	if (acq->fifo_type == FIFO_IMG) {
 		stream_type |= MARK_STREAM;
 		what_to_read |= (0x4 | 0x8 | 0x10);   // also pixel, line, frame markers possible
 	}
 
-	// there is new alternative method:
-	//  call SPC_get_fifo_init_vars function to get:
-	//      - values needed to init photons stream  
-	//      -  .spc file header
 
-	//ret = SPC_get_fifo_init_vars ( act_mod,  &fifo_type, &stream_type, NULL, NULL);
 
 	int ret = 0;
 	unsigned int loc = 0;
@@ -1003,7 +1001,7 @@ bool BH_saveLTDataSDT(struct AcqPrivateData *acq) {
 
 
 	SPCdata parameters;
-	SPC_get_parameters(0, &m_spc_dat);//
+	SPC_get_parameters(MODULE, &parameters);//
 	int FLIM_ADCResolution = 8;
 
 	///size change start///////
@@ -1034,8 +1032,6 @@ bool BH_saveLTDataSDT(struct AcqPrivateData *acq) {
 	//working code ends
 
 
-	parameters = m_spc_dat;
-
 	///code block for testing display PC data
 	/*
 	char filename[500];
@@ -1064,7 +1060,7 @@ bool BH_saveLTDataSDT(struct AcqPrivateData *acq) {
 
 	// Create Header Block
 
-	short moduleType = SPC_test_id(0);//MODULE//TODO
+	short moduleType = SPC_test_id(MODULE);
 	switch (moduleType) {
 	default:
 	case 150:
@@ -1194,7 +1190,7 @@ bool BH_saveLTDataSDT(struct AcqPrivateData *acq) {
 
 
 
-	iPhotonCountBufferSize = pixelsPerLine * linesPerFrame * (1 << FLIM_ADCResolution) * sizeof(short);
+	iPhotonCountBufferSize = pixelsPerLine * linesPerFrame * (1 << FLIM_ADCResolution) * sizeof(short);//this size should be dynamically allocated in the future
 	//short *iPhotonCountBuffer;//should be void*
 	iPhotonCountBuffer = (short*)malloc(iPhotonCountBufferSize);
 	if (iPhotonCountBuffer == NULL) {
@@ -1253,16 +1249,12 @@ bool BH_saveLTDataSDT(struct AcqPrivateData *acq) {
 				//}
 				linCount = 0;
 
-
-
 			}
 
 			if (phot_info.flags == L_MARK) {
-				//lineCount++;
 
 				lineFrameMacroTime = phot_info.mtime_lo;
 				linCount++;
-
 
 			}
 
@@ -1271,6 +1263,7 @@ bool BH_saveLTDataSDT(struct AcqPrivateData *acq) {
 			float linNoTemp = linCount / ((float)factorforSize);
 			tempLin = (int)(linNoTemp>(pixelsPerLine - 1) ? (pixelsPerLine - 1) : linNoTemp);  //check limit
 
+			//the following line should be upgraded to 64bit code in case this does not work
 			unsigned long relativeMacroTime = phot_info.mtime_lo - lineFrameMacroTime;//relative macro time compared to start of line
 
 			float tempPix = (float)relativeMacroTime / ((float)pixelTime);//location in one line, given the pixel time
@@ -1294,13 +1287,8 @@ bool BH_saveLTDataSDT(struct AcqPrivateData *acq) {
 			//int locPix=(int)(tempPix>borderLimit?borderLimit:tempPix);//location in a row
 			float ratio = (float)pixelsPerLine / ((float)(borderLimit - startExcludePixel));
 			int locPix = (int)((tempPix - (float)startExcludePixel)*ratio);
-			//test resolution
-			//linCount=linCount/2;
 
-			//endtest
-
-			//LTmatrix[linCount][locPix]++;
-			LTmatrix[tempLin][locPix]++;
+			LTmatrix[tempLin][locPix]++;//intensity photon counting image
 
 			//microtime calculcation/// no change needed for resolution change
 			float tempLoc = (float)phot_info.micro_time * 256 / 4000;
@@ -1327,6 +1315,51 @@ bool BH_saveLTDataSDT(struct AcqPrivateData *acq) {
 
 
 	}
+
+
+
+	///////////////////test save portion here///////////////////
+	//taken from save_LTData_to_file() function
+	//CString dest_filename, date, temp_filename, time, temp_str, temp_hour, temp_min, temp_sec;
+	sdt_file_header dest_header;
+	//CFile dest_file;
+	data_block_header dest_dbh;
+	SYSTEMTIME now;
+
+
+
+	char previousPath[4096];
+	GetCurrentDirectory(4096, previousPath);
+
+	//default file
+	char dest_filename[500];
+	sprintf_s(dest_filename, 500, "trailFinal1.sdt");//it was *.bin
+
+
+												//default file end
+
+
+
+	FILE* headerFile;
+	//fopen_s(&headerFile, filename, "wb");
+	fopen_s(&headerFile, dest_filename, "wb");
+	if (headerFile == NULL) return 0;  
+
+
+	fwrite(&header, sizeof(bhfile_header), 1, headerFile);  //Write Header Block
+	fwrite(file_info, file_info_length, 1, headerFile);  // Write File Info Block
+	fwrite(setup, setup_length, 1, headerFile);  // Write Setup Block
+	fwrite(&meas_desc, sizeof(MeasureInfo), 1, headerFile);  //Write Measurement Description Block
+	fwrite(&block_header, sizeof(data_block_header), 1, headerFile);  //Write Data Block Header
+	fwrite(iPhotonCountBuffer, sizeof(short), iPhotonCountBufferSize / sizeof(short), headerFile);
+
+
+	free(iPhotonCountBuffer);
+	fclose(headerFile);
+
+	flagFreeBuff = 1;//emptied
+
+
 
 	return true;
 }
