@@ -27,6 +27,9 @@ struct ReadoutState
 static OSc_Error EnumerateInstances(OSc_Device ***devices, size_t *count)
 {
 	short spcErr;
+	short spcRet;
+	int active_board[1];
+	SPCModInfo m_ModInfo;
 	//short status=SPC_get_init_status();
 
 	//spcErr = SPC_close();  // close SPC150 if it remains open from previous session
@@ -39,6 +42,38 @@ static OSc_Error EnumerateInstances(OSc_Device ***devices, size_t *count)
 		return OSc_Error_SPC150_CANNOT_OPEN_FILE;
 	}
 
+
+	spcRet = SPC_get_module_info(MODULE, (SPCModInfo *)&m_ModInfo);
+	if (spcRet != 0) {
+		SPC_get_error_string(spcRet, spcErr, 100);
+		
+	}
+
+	int isBoardActive = 0;
+	if (m_ModInfo.init == OK)
+	{
+		isBoardActive = 1;
+	}
+	else
+	{	// the board is forced to be available to this program in harware mode
+		//reset the board and reload
+		short force_use = 1;
+		active_board[0] = 1;
+		spcRet = SPC_set_mode(SPC_HARD, force_use, active_board);
+
+		//reset?
+		SPC_get_module_info(MODULE, (SPCModInfo *)&m_ModInfo);
+
+		if (m_ModInfo.init == OK)
+		{
+			isBoardActive = 1;
+		}
+		else
+		{
+			//resetting the board failed
+			isBoardActive = 0;
+		}
+	}
 	// For now, support just one board
 
 	struct BH_PrivateData *data = calloc(1, sizeof(struct BH_PrivateData));
@@ -551,7 +586,7 @@ static DWORD WINAPI AcquireExtractLoop(void *param)
 	return 0;
 }
 
-void Bh_FIFO_Loop(void *param) {
+void BH_FIFO_Loop(void *param) {
 
 	OSc_Device *device = (OSc_Device *)param;
 	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
@@ -778,6 +813,7 @@ void Bh_FIFO_Loop(void *param) {
 
 	}
 	//savign the photon(converted to exponential file)
+	//this funtion should execute after the acquisition is over
 	extractPhoton(acq);
 	
 }
@@ -1443,8 +1479,7 @@ static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 		0x0008 | // line markers
 		0x0010 | // frame markers
 		0x0020; // (marker 3)
-	privAcq->streamHandle =
-		SPC_init_buf_stream(fifoType, streamType, whatToRead, initMacroClock, 0);
+	//privAcq->streamHandle =SPC_init_buf_stream(fifoType, streamType, whatToRead, initMacroClock, 0);
 
 	privAcq->acquisition = acq;
 	privAcq->wroteHeader = false;
@@ -1456,10 +1491,13 @@ static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 
 	DWORD id;
 	
-	privAcq->thread = CreateThread(NULL, 0, AcquireExtractLoop, device, 0, &id);
+	//privAcq->thread = CreateThread(NULL, 0, AcquireExtractLoop, device, 0, &id);
 	//AcquireExtractLoop(device);
 	//privAcq->thread = CreateThread(NULL, 0, AcquisitionLoop, device, 0, &id);
 	//privAcq->readoutThread = CreateThread(NULL, 0, ReadoutLoop, device, 0, &id);
+	BH_FIFO_Loop(&id);
+
+
 	return OSc_Error_OK;
 }
 
