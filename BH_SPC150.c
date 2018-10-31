@@ -595,7 +595,11 @@ void BH_FIFO_Loop(void *param) {
 
 	OSc_Device *device = (OSc_Device *)param;
 	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
+	SPCdata parameterCheck;
+	SPC_get_parameters(0, &parameterCheck);
+	set_measurement_params();
 
+	//adapted from init_fifo_measurement
 
 	float curr_mode;
 	unsigned short offset_value, *ptr;
@@ -612,19 +616,20 @@ void BH_FIFO_Loop(void *param) {
 	short act_mod = 0;
 	unsigned long fifo_size;
 	unsigned long max_ph_to_read, max_words_in_buf, words_in_buf = 0 , current_cnt;
+	unsigned short fpga_version;
 
-
-	
+	SPC_get_version(act_mod, &fpga_version);
 	// before the measurement sequencer must be disabled
 	SPC_enable_sequencer(act_mod, 0);
 	// set correct measurement mode
 
 	SPC_get_parameter(act_mod, MODE, &curr_mode);
 
+	SPC_get_parameters(0, &parameterCheck);
 	switch (module_type) {
 	case M_SPC130:
 		break;
-
+		//these blocks hsould be upgraded to support other boards// TODO
 	case M_SPC600:
 	case M_SPC630:
 		break;
@@ -661,11 +666,14 @@ void BH_FIFO_Loop(void *param) {
 	SPC_get_parameter(act_mod, ROUTING_MODE, &fval);
 	rout_mode = fval;
 
+	SPC_get_parameters(0, &parameterCheck);
 	// use the same polarity of markers in Fifo_Img and Fifo mode
 	rout_mode &= 0xfff8;
 	rout_mode |= scan_polarity & 0x7;
 
 	SPC_get_parameter(act_mod, MODE, &curr_mode);
+
+	SPC_get_parameters(0, &parameterCheck);
 	if (curr_mode == ROUT_OUT) {
 		rout_mode |= 0xf00;     // markers 0-3 enabled
 		SPC_set_parameter(act_mod, ROUTING_MODE, rout_mode);
@@ -675,17 +683,19 @@ void BH_FIFO_Loop(void *param) {
 		SPC_set_parameter(act_mod, ROUTING_MODE, rout_mode);
 		SPC_set_parameter(act_mod, SCAN_POLARITY, scan_polarity);
 	}
-
+	SPC_get_parameters(0, &parameterCheck);
 	// switch off stop_on_overfl
 	SPC_set_parameter(act_mod, STOP_ON_OVFL, 0);
+	SPC_get_parameters(0, &parameterCheck);
 	SPC_set_parameter(act_mod, STOP_ON_TIME, 0);
+	SPC_get_parameters(0, &parameterCheck);
 	if (fifo_stopt_possible) {
 
 		SPC_set_parameter(act_mod, STOP_ON_TIME, 1);
 		//SPC_set_parameter ( act_mod, COLLECT_TIME, 60 ); // default  - stop after 10 sec
 	}
 
-
+	SPC_get_parameters(0, &parameterCheck);
 	if (module_type == M_SPC830)
 		max_ph_to_read = 2000000; // big fifo, fast DMA readout
 	else
@@ -704,7 +714,7 @@ void BH_FIFO_Loop(void *param) {
 	acq->buffer = (unsigned short *)malloc(max_words_in_buf * sizeof(unsigned short));
 	if (acq->buffer ==NULL)
 		return;
-
+	SPC_get_parameters(0, &parameterCheck);
 	photons_to_read = 100000000;
 
 	words_to_read = 2 * photons_to_read; //max photon in one acquisition cycle
@@ -738,7 +748,9 @@ void BH_FIFO_Loop(void *param) {
 	unsigned short PrevMacroTIme = 0;
 	unsigned long totMacroTime = 0;
 
-	
+	SPC_get_parameters(0, &parameterCheck);
+
+	spcRet = SPC_start_measurement(GetData(device)->moduleNr);
 	while (!spcRet) {
 		loopcount++;
 		// now test SPC state and read photons
@@ -757,6 +769,8 @@ void BH_FIFO_Loop(void *param) {
 
 		ptr = (unsigned short *)&(acq->buffer[words_in_buf]);
 
+		SPCdata parameterCheck1;
+		SPC_get_parameters(0, &parameterCheck1);
 		if (state & SPC_ARMED) {  //  system armed   //continues to get data
 			if (state & SPC_FEMPTY)
 				continue;  // Fifo is empty - nothing to read
@@ -808,6 +822,12 @@ void BH_FIFO_Loop(void *param) {
 				break;
 			}
 		}
+		if ((state & SPC_COLTIM_OVER) | (state & SPC_TIME_OVER)) {//if overtime occured, that should be over
+																  //there should be exit code here if time over by 10 seconds
+			break;
+
+		}
+
 		if (loopcount > 300000)
 			break;
 	}
@@ -835,6 +855,42 @@ void BH_FIFO_Loop(void *param) {
 	
 }
 
+
+int set_measurement_params() {
+	/*
+	-the SPC parameters must be set(SPC_init or SPC_set_parameter(s)),
+		-the SPC memory must be configured(SPC_configure_memory in normal modes),
+		-the measured blocks in SPC memory must be filled(cleared) (SPC_fill_memory),
+		-the measurement page must be set(SPC_set_page)
+
+		*/
+	SPCMemConfig m_spc_mem_config;
+
+	int m_meas_page = 0;
+	//reset the memory of LifeTime board
+	SPC_configure_memory(MODULE, -1, 0, &m_spc_mem_config);
+	short ret = SPC_fill_memory(MODULE, -1, 0, 0);
+	if (ret != 0) {
+		//TRACE("Failed at SPC_fill_memory()\n");
+		//SPC_get_error_string(ret, err, 100);
+		//TRACE("\n ERROR_MEMORY_FILL \n %s\n", err);
+	}
+
+	//ret = SPC_clear_rates(MODULE);
+
+	//ret = SPC_fill_memory(MODULE, -1, m_meas_page, 0);
+
+	ret= SPC_set_page(MODULE, m_meas_page);
+
+
+
+	if (ret != 0) {
+		//TRACE("ERROR: when clearing rates\n");
+		return ret;
+	}
+
+	return 0;
+}
 //int save_photons_in_file(short fifoTypeReturn, short fifo_type, unsigned long words_in_buf, short *buffer) {
 int save_photons_in_file(struct AcqPrivateData *acq) {
 	
@@ -1122,7 +1178,7 @@ int foo(void *param) {
 	flagFreeBuff = 0;//0- indicates buffer is full//1 indicates empty
 	memset(iPhotonCountBuffer, 0, iPhotonCountBufferSize);
 
-	
+	 
 	if (acq->streamHandle >= 0) {
 		// 2. in every moment of extracting current stream state can be checked
 		SPC_get_phot_stream_info(acq->streamHandle, &stream_info);
@@ -1232,7 +1288,7 @@ int foo(void *param) {
 
 	//default file
 	char dest_filename[500];
-	sprintf_s(dest_filename, 500, "trailFinal1.sdt");//it was *.bin
+	sprintf_s(dest_filename, 500, "traildata.sdt");//it was *.bin
 
 
 													 //default file end
@@ -1240,7 +1296,7 @@ int foo(void *param) {
 
 
 	FILE* headerFile;
-	//fopen_s(&headerFile, filename, "wb");
+
 	fopen_s(&headerFile, dest_filename, "wb");
 	if (headerFile == NULL) return 0;
 
@@ -1249,7 +1305,10 @@ int foo(void *param) {
 	ret = fwrite(file_info, file_info_length, 1, headerFile);  // Write File Info Block
 	ret = fwrite(setup, setup_length, 1, headerFile);  // Write Setup Block
 	ret = fwrite(&meas_desc, sizeof(MeasureInfo), 1, headerFile);  //Write Measurement Description Block
+	//ret = fwrite(&block_header, sizeof(data_block_header), 1, headerFile);  //Write Data Block Header
 	ret = fwrite(&block_header, sizeof(data_block_header), 1, headerFile);  //Write Data Block Header
+
+	
 	ret = fwrite(iPhotonCountBuffer, sizeof(short), iPhotonCountBufferSize / sizeof(short), headerFile);
 
 
@@ -1881,7 +1940,7 @@ static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 	LeaveCriticalSection(&(privAcq->mutex));
 
 	DWORD id;
-	
+	set_measurement_params();
 	//privAcq->thread = CreateThread(NULL, 0, AcquireExtractLoop, device, 0, &id);
 	//AcquireExtractLoop(device);
 	//privAcq->thread = CreateThread(NULL, 0, AcquisitionLoop, device, 0, &id);
