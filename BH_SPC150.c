@@ -685,14 +685,15 @@ void BH_FIFO_Loop(void *param) {
 	}
 	SPC_get_parameters(0, &parameterCheck);
 	// switch off stop_on_overfl
-	SPC_set_parameter(act_mod, STOP_ON_OVFL, 0);
-	SPC_get_parameters(0, &parameterCheck);
-	SPC_set_parameter(act_mod, STOP_ON_TIME, 0);
-	SPC_get_parameters(0, &parameterCheck);
+	SPC_set_parameter(act_mod, STOP_ON_OVFL, 1);
+	
+	SPC_set_parameter(act_mod, STOP_ON_TIME, 1);
+	
 	if (fifo_stopt_possible) {
 
 		SPC_set_parameter(act_mod, STOP_ON_TIME, 1);
-		//SPC_set_parameter ( act_mod, COLLECT_TIME, 60 ); // default  - stop after 10 sec
+		
+
 	}
 
 	SPC_get_parameters(0, &parameterCheck);
@@ -828,7 +829,7 @@ void BH_FIFO_Loop(void *param) {
 
 		}
 
-		if (loopcount > 300000)
+		if (loopcount > 900000)
 			break;
 	}
 
@@ -1819,7 +1820,7 @@ bool BH_saveLTDataSDT(void *param) {
 
 	//default file
 	char dest_filename[500];
-	sprintf_s(dest_filename, 500, "trailFinal1.sdt");//it was *.bin
+	sprintf_s(dest_filename, 500, "trialFinal1.sdt");//it was *.bin
 
 
 												//default file end
@@ -1908,8 +1909,8 @@ static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 	else
 		spcData.routing_mode |= 0x0800;
 
-	spcData.stop_on_ovfl = 0;
-	spcData.stop_on_time = 0; // We explicitly stop after the desired number of frames
+	spcData.stop_on_ovfl = 1;
+	spcData.stop_on_time = 1; // We explicitly stop after the desired number of frames
 
 	spcRet = SPC_set_parameters(moduleNr, &spcData);
 	if (spcRet)
