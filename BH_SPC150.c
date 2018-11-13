@@ -2,7 +2,6 @@
 #include "BH_SPC150Private.h"
 
 #include <stdio.h>
-#pragma pack(1)
 
 
 static OSc_Device **g_devices;
@@ -45,6 +44,9 @@ static OSc_Error EnumerateInstances(OSc_Device ***devices, size_t *count)
 		OSc_Log_Error(NULL, msg);
 		return OSc_Error_SPC150_CANNOT_OPEN_FILE;
 	}
+
+
+
 
 
 	spcRet = SPC_get_module_info(MODULE, (SPCModInfo *)&m_ModInfo);
@@ -701,11 +703,11 @@ void BH_FIFO_Loop(void *param) {
 		max_ph_to_read = 2000000; // big fifo, fast DMA readout
 	else
 		//max_ph_to_read = 16384;
-		max_ph_to_read = 20000;
+		max_ph_to_read = 200000;
 	if (fifo_type == FIFO_48)
 		max_words_in_buf = 3 * max_ph_to_read;
 	else
-		max_words_in_buf = 1 * max_ph_to_read;
+		max_words_in_buf = 2 * max_ph_to_read;
 
 	////////
 
@@ -716,7 +718,7 @@ void BH_FIFO_Loop(void *param) {
 	if (acq->buffer ==NULL)
 		return;
 	SPC_get_parameters(0, &parameterCheck);
-	photons_to_read = 100000000;
+	photons_to_read = 10000000;
 
 	words_to_read = 2 * photons_to_read; //max photon in one acquisition cycle
 
@@ -750,6 +752,7 @@ void BH_FIFO_Loop(void *param) {
 	unsigned long totMacroTime = 0;
 
 	SPC_get_parameters(0, &parameterCheck);
+	//snprintf(msg, OSc_MAX_STR_LEN, "Updated magnification is: %6.2f", *magnification);
 
 	spcRet = SPC_start_measurement(GetData(device)->moduleNr);
 	while (!spcRet) {
@@ -772,12 +775,18 @@ void BH_FIFO_Loop(void *param) {
 
 		SPCdata parameterCheck1;
 		SPC_get_parameters(0, &parameterCheck1);
+
+		
+
+		
 		if (state & SPC_ARMED) {  //  system armed   //continues to get data
+			
 			if (state & SPC_FEMPTY)
 				continue;  // Fifo is empty - nothing to read
 
 						   // before the call current_cnt contains required number of words to read from fifo
 			spcRet = SPC_read_fifo(act_mod, &current_cnt, ptr);
+			//printf("%d ",current_cnt);
 
 			totalPhot += current_cnt;
 			words_left -= current_cnt;
@@ -825,12 +834,10 @@ void BH_FIFO_Loop(void *param) {
 		}
 		if ((state & SPC_COLTIM_OVER) | (state & SPC_TIME_OVER)) {//if overtime occured, that should be over
 																  //there should be exit code here if time over by 10 seconds
-			break;
-
-		}
-
-		if (loopcount > 900000)
-			break;
+				break; }
+//		
+//			if(loopcount > 10000)
+//				break;	
 	}
 
 	// SPC_stop_measurement should be called even if the measurement was stopped after collection time
@@ -870,7 +877,7 @@ int set_measurement_params() {
 	int m_meas_page = 0;
 	//reset the memory of LifeTime board
 	SPC_configure_memory(MODULE, -1, 0, &m_spc_mem_config);
-	short ret = SPC_fill_memory(MODULE, -1, 0, 0);
+	short ret = SPC_fill_memory(MODULE, -1, -1, 0);
 	if (ret != 0) {
 		//TRACE("Failed at SPC_fill_memory()\n");
 		//SPC_get_error_string(ret, err, 100);
@@ -956,7 +963,7 @@ int save_photons_in_file(struct AcqPrivateData *acq) {
 
 }
 
-int foo(void *param) {
+int foo(void *param) {//write SDT
 	
 	OSc_Device *device = (OSc_Device *)param;
 	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
@@ -1004,7 +1011,7 @@ int foo(void *param) {
 	int FLIM_ADCResolution = 8;
 
 	///size change start///////
-	int factorforSize = 1;
+	int factorforSize =2;
 	int factorPixel = 1;
 
 
@@ -1284,8 +1291,7 @@ int foo(void *param) {
 
 
 
-	char previousPath[4096];
-	GetCurrentDirectory(4096, previousPath);
+
 
 	//default file
 	char dest_filename[500];
@@ -1871,13 +1877,15 @@ static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 	short moduleNr = GetData(device)->moduleNr;
 	SPCdata spcData;
 	short spcRet = SPC_get_parameters(moduleNr, &spcData);
-	spcData.scan_size_x = 256;
-	spcData.scan_size_y = 256;
-	spcData.adc_resolution = 8;
-	spcData.collect_time = 10;
-	spcRet = SPC_set_parameters(moduleNr, &spcData);
-
-	spcRet = SPC_get_parameters(moduleNr, &spcData); // debugging purpose
+	//spcData.scan_size_x = 1;
+	//spcData.scan_size_y = 1;
+	//spcData.adc_resolution = 8;
+	//spcData.collect_time = 30;
+	//spcData.repeat_time = 10;
+	//spcRet = SPC_set_parameters(moduleNr, &spcData);
+	SPC_set_parameter(moduleNr, STOP_ON_TIME, 1);
+	SPC_set_parameter(moduleNr, COLLECT_TIME, 10.0);
+	//spcRet = SPC_get_parameters(moduleNr, &spcData); // debugging purpose
 
 	if (spcRet)
 		return OSc_Error_Unknown;
@@ -1894,7 +1902,7 @@ static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 	privAcq->frameBuffer = malloc(nPixels * sizeof(uint16_t));
 	privAcq->pixelTime = 50000; // Units of 0.1 ns (same as macro clock); TODO get this from scanner
 
-	spcRet = SPC_enable_sequencer(moduleNr, 0);
+	//spcRet = SPC_enable_sequencer(moduleNr, 0);
 	if (spcRet)
 		return OSc_Error_Unknown;
 
@@ -1911,8 +1919,10 @@ static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 
 	spcData.stop_on_ovfl = 1;
 	spcData.stop_on_time = 1; // We explicitly stop after the desired number of frames
+	SPC_set_parameter(moduleNr, STOP_ON_TIME, 1);
+	SPC_set_parameter(moduleNr, STOP_ON_OVFL, 10.0);
 
-	spcRet = SPC_set_parameters(moduleNr, &spcData);
+	//spcRet = SPC_set_parameters(moduleNr, &spcData);
 	if (spcRet)
 		return OSc_Error_Unknown;
 
