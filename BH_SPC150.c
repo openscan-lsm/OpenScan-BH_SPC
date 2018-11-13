@@ -36,7 +36,7 @@ static OSc_Error EnumerateInstances(OSc_Device ***devices, size_t *count)
 	//short status=SPC_get_init_status();
 
 	//spcErr = SPC_close();  // close SPC150 if it remains open from previous session
-	spcErr = SPC_init("spcm.ini");
+	spcErr = SPC_init("cspcm.ini");
 	if (spcErr < 0)
 	{
 		char msg[OSc_MAX_STR_LEN + 1] = "Cannot initialize BH SPC150 using: ";
@@ -592,9 +592,12 @@ static DWORD WINAPI AcquireExtractLoop(void *param)
 	return 0;
 }
 
-void BH_FIFO_Loop(void *param) {
+
+static DWORD WINAPI BH_FIFO_Loop(void *param){
+//void BH_FIFO_Loop(void *param) {
 //static DWORD WINAPI BH_FIFO_Loop(void *param) {
 
+	set_measurement_params();
 	OSc_Device *device = (OSc_Device *)param;
 	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
 	SPCdata parameterCheck;
@@ -836,8 +839,8 @@ void BH_FIFO_Loop(void *param) {
 																  //there should be exit code here if time over by 10 seconds
 				break; }
 //		
-//			if(loopcount > 10000)
-//				break;	
+		if(loopcount > 10000)
+				break;	
 	}
 
 	// SPC_stop_measurement should be called even if the measurement was stopped after collection time
@@ -855,11 +858,14 @@ void BH_FIFO_Loop(void *param) {
 	//savign the photon(converted to exponential file)
 	//this funtion should execute after the acquisition is over
 
-	BH_extractPhoton(device);
+	//BH_extractPhoton(device);
 	EnterCriticalSection(&(acq->mutex));
 	acq->isRunning = false;
 	LeaveCriticalSection(&(acq->mutex));
 	WakeAllConditionVariable(&(acq->acquisitionFinishCondition));
+
+
+
 	
 }
 
@@ -1861,7 +1867,9 @@ bool BH_saveLTDataSDT(void *param) {
 static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 {
 	struct AcqPrivateData *privAcq = &(GetData(device)->acquisition);
-
+	short moduleNr = GetData(device)->moduleNr;
+	short state;
+	SPC_test_state(moduleNr, &state);
 	EnterCriticalSection(&(privAcq->mutex));
 	{
 		if (privAcq->isRunning)
@@ -1874,31 +1882,28 @@ static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 	}
 	LeaveCriticalSection(&(privAcq->mutex));
 
-	short moduleNr = GetData(device)->moduleNr;
-	SPCdata spcData;
-	short spcRet = SPC_get_parameters(moduleNr, &spcData);
-	//spcData.scan_size_x = 1;
-	//spcData.scan_size_y = 1;
-	//spcData.adc_resolution = 8;
-	//spcData.collect_time = 30;
-	//spcData.repeat_time = 10;
-	//spcRet = SPC_set_parameters(moduleNr, &spcData);
-	SPC_set_parameter(moduleNr, STOP_ON_TIME, 1);
-	SPC_set_parameter(moduleNr, COLLECT_TIME, 10.0);
-	//spcRet = SPC_get_parameters(moduleNr, &spcData); // debugging purpose
 
-	if (spcRet)
-		return OSc_Error_Unknown;
+	if (!(state&SPC_ARMED)) {
 
-	//privAcq->width = (size_t)spcData.scan_size_x;
-	//privAcq->height = (size_t)spcData.scan_size_y;
+	//	privAcq->width = 256;
+	//	privAcq->height = 256;
 
-	//this size needs to be taken care by the privAcq structure as the board's scan_size_x does not matter in FIFO mode
+	//	size_t nPixels = privAcq->width * privAcq->height;
+		///BH_FIFO_Loop(device);
+		DWORD id;
 
-	privAcq->width = 256;
-	privAcq->height =256 ;
+	//	privAcq->thread = CreateThread(NULL, 0, BH_FIFO_Loop, device, 0, &id);
 
-	size_t nPixels = privAcq->width * privAcq->height;
+
+
+
+	}
+
+	else {
+				
+	}
+
+	/*
 	privAcq->frameBuffer = malloc(nPixels * sizeof(uint16_t));
 	privAcq->pixelTime = 50000; // Units of 0.1 ns (same as macro clock); TODO get this from scanner
 
@@ -1945,13 +1950,13 @@ static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 	privAcq->acquisition = acq;
 	privAcq->wroteHeader = false;
 	strcpy(privAcq->fileName, "D:\\Documents\\BH_data\\TODO.spc");
-
+	
 	EnterCriticalSection(&(privAcq->mutex));
 	privAcq->stopRequested = false;
 	LeaveCriticalSection(&(privAcq->mutex));
-
+	*/
 	DWORD id;
-	set_measurement_params();
+	
 	//privAcq->thread = CreateThread(NULL, 0, AcquireExtractLoop, device, 0, &id);
 	//AcquireExtractLoop(device);
 	//privAcq->thread = CreateThread(NULL, 0, AcquisitionLoop, device, 0, &id);
@@ -1959,7 +1964,14 @@ static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 
 	//privAcq->readoutThread = CreateThread(NULL, 0, BH_FIFO_Loop, device, 0, &id);
 
-	BH_FIFO_Loop(device);
+
+	//test insert
+	EnterCriticalSection(&(privAcq->mutex));
+	privAcq->isRunning = false;
+	LeaveCriticalSection(&(privAcq->mutex));
+	WakeAllConditionVariable(&(privAcq->acquisitionFinishCondition));
+
+
 	return OSc_Error_OK;
 }
 
