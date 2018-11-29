@@ -592,6 +592,35 @@ static DWORD WINAPI AcquireExtractLoop(void *param)
 	return 0;
 }
 
+static DWORD WINAPI fooLOOP(void *param) {
+	OSc_Device *device = (OSc_Device *)param;
+	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
+
+
+	while (true) {
+	//	sleep(10);
+
+		bool stopRequested;
+		EnterCriticalSection(&(GetData(device)->acquisition.mutex));
+		stopRequested = GetData(device)->acquisition.stopRequested;
+		LeaveCriticalSection(&(GetData(device)->acquisition.mutex));
+		if (stopRequested)
+		{
+			OSc_Log_Debug(device, "User interruption for FooLoop...");
+			
+
+			break;
+		}
+	
+	}
+	EnterCriticalSection(&(acq->mutex));
+	acq->isRunning = false;
+	acq->stopRequested = true;
+	LeaveCriticalSection(&(acq->mutex));
+	WakeAllConditionVariable(&(acq->acquisitionFinishCondition));
+
+}
+
 
 static DWORD WINAPI BH_FIFO_Loop(void *param){
 //void BH_FIFO_Loop(void *param) {
@@ -603,6 +632,8 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 	SPCdata parameterCheck;
 	SPC_get_parameters(0, &parameterCheck);
 	set_measurement_params();
+
+	OSc_Log_Debug(device, "Started FLIM");
 
 	//adapted from init_fifo_measurement
 
@@ -758,6 +789,11 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 	//snprintf(msg, OSc_MAX_STR_LEN, "Updated magnification is: %6.2f", *magnification);
 
 	spcRet = SPC_start_measurement(GetData(device)->moduleNr);
+	char msg[OSc_MAX_STR_LEN + 1];
+	snprintf(msg, OSc_MAX_STR_LEN, "return value after start measurement %d", spcRet);
+
+	OSc_Log_Debug(device, msg);
+
 	while (!spcRet) {
 		loopcount++;
 		// now test SPC state and read photons
@@ -768,6 +804,9 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 		if (state & SPC_WAIT_TRG) {   // wait for trigger                
 			continue;
 		}
+		snprintf(msg, OSc_MAX_STR_LEN, "inside while, loopcount %d", loopcount);
+		OSc_Log_Debug(device, msg);
+
 		if (words_left > max_words_in_buf - words_in_buf)
 			// limit current_cnt to the free space in buffer
 			current_cnt = max_words_in_buf - words_in_buf;
@@ -804,7 +843,11 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 			}
 
 			if ((state & SPC_COLTIM_OVER) | (state & SPC_TIME_OVER)) {//if overtime occured, that should be over
-																			  //there should be exit code here if time over by 10 seconds
+					
+																	  
+																	  //there should be exit code here if time over by 10 seconds
+
+				OSc_Log_Debug(device, "FLIM Collection time over");
 				break;
 
 			}
@@ -820,6 +863,7 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 				spcRet= save_photons_in_file(acq);
 				totalWord += words_in_buf;
 				acq->words_in_buf=words_in_buf = 0;
+				OSc_Log_Debug(device, "Maximum buffer reached");
 			}
 		}
 		else { //enters when SPC is not armed //NOT armed when measurement is NOT in progress
@@ -845,7 +889,7 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 
 	// SPC_stop_measurement should be called even if the measurement was stopped after collection time
 	//           to set DLL internal variables
-		
+	OSc_Log_Debug(device, "Finished FLIM");
 	SPC_stop_measurement(act_mod);
 	SPC_stop_measurement(act_mod);
 	totalWord += words_in_buf;
@@ -861,6 +905,7 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 	//BH_extractPhoton(device);
 	EnterCriticalSection(&(acq->mutex));
 	acq->isRunning = false;
+	acq->stopRequested = true;
 	LeaveCriticalSection(&(acq->mutex));
 	WakeAllConditionVariable(&(acq->acquisitionFinishCondition));
 
@@ -1867,9 +1912,6 @@ bool BH_saveLTDataSDT(void *param) {
 static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 {
 	struct AcqPrivateData *privAcq = &(GetData(device)->acquisition);
-	short moduleNr = GetData(device)->moduleNr;
-	short state;
-	SPC_test_state(moduleNr, &state);
 	EnterCriticalSection(&(privAcq->mutex));
 	{
 		if (privAcq->isRunning)
@@ -1881,96 +1923,6 @@ static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 		privAcq->isRunning = true;
 	}
 	LeaveCriticalSection(&(privAcq->mutex));
-
-
-	if (!(state&SPC_ARMED)) {
-
-	//	privAcq->width = 256;
-	//	privAcq->height = 256;
-
-	//	size_t nPixels = privAcq->width * privAcq->height;
-		///BH_FIFO_Loop(device);
-		DWORD id;
-
-	//	privAcq->thread = CreateThread(NULL, 0, BH_FIFO_Loop, device, 0, &id);
-
-
-
-
-	}
-
-	else {
-				
-	}
-
-	/*
-	privAcq->frameBuffer = malloc(nPixels * sizeof(uint16_t));
-	privAcq->pixelTime = 50000; // Units of 0.1 ns (same as macro clock); TODO get this from scanner
-
-	//spcRet = SPC_enable_sequencer(moduleNr, 0);
-	if (spcRet)
-		return OSc_Error_Unknown;
-
-	if (spcData.mode != ROUT_OUT && spcData.mode != FIFO_32M)
-		spcData.mode = ROUT_OUT;
-
-	spcData.routing_mode &= 0xfff8;
-	spcData.routing_mode |= spcData.scan_polarity & 0x07;
-
-	if (spcData.mode == ROUT_OUT)
-		spcData.routing_mode |= 0x0f00;
-	else
-		spcData.routing_mode |= 0x0800;
-
-	spcData.stop_on_ovfl = 1;
-	spcData.stop_on_time = 1; // We explicitly stop after the desired number of frames
-	SPC_set_parameter(moduleNr, STOP_ON_TIME, 1);
-	SPC_set_parameter(moduleNr, STOP_ON_OVFL, 10.0);
-
-	//spcRet = SPC_set_parameters(moduleNr, &spcData);
-	if (spcRet)
-		return OSc_Error_Unknown;
-
-	short fifoType;
-	short streamType;
-	int initMacroClock;
-	spcRet=privAcq->initVariableTyope = SPC_get_fifo_init_vars(moduleNr, &fifoType, &streamType, &initMacroClock, NULL);
-	if (spcRet)
-		return OSc_Error_Unknown;
-
-	privAcq->fifo_type = fifoType;
-	short whatToRead = 0x0001 | // valid photons
-		0x0002 | // invalid photons
-		0x0004 | // pixel markers
-		0x0008 | // line markers
-		0x0010 | // frame markers
-		0x0020; // (marker 3)
-	//privAcq->streamHandle =SPC_init_buf_stream(fifoType, streamType, whatToRead, initMacroClock, 0);
-
-	privAcq->acquisition = acq;
-	privAcq->wroteHeader = false;
-	strcpy(privAcq->fileName, "D:\\Documents\\BH_data\\TODO.spc");
-	
-	EnterCriticalSection(&(privAcq->mutex));
-	privAcq->stopRequested = false;
-	LeaveCriticalSection(&(privAcq->mutex));
-	*/
-	DWORD id;
-	
-	//privAcq->thread = CreateThread(NULL, 0, AcquireExtractLoop, device, 0, &id);
-	//AcquireExtractLoop(device);
-	//privAcq->thread = CreateThread(NULL, 0, AcquisitionLoop, device, 0, &id);
-	//privAcq->readoutThread = CreateThread(NULL, 0, ReadoutLoop, device, 0, &id);
-
-	//privAcq->readoutThread = CreateThread(NULL, 0, BH_FIFO_Loop, device, 0, &id);
-
-
-	//test insert
-	EnterCriticalSection(&(privAcq->mutex));
-	privAcq->isRunning = false;
-	LeaveCriticalSection(&(privAcq->mutex));
-	WakeAllConditionVariable(&(privAcq->acquisitionFinishCondition));
-
 
 	return OSc_Error_OK;
 }
@@ -1990,6 +1942,45 @@ unsigned short compute_checksum(void* hdr) {
 
 static OSc_Error BH_StartDetector(OSc_Device *device, OSc_Acquisition *acq)
 {
+
+	struct AcqPrivateData *privAcq = &(GetData(device)->acquisition);
+	short moduleNr = GetData(device)->moduleNr;
+	short state;
+	SPC_test_state(moduleNr, &state);
+	DWORD id;
+	privAcq->thread = CreateThread(NULL, 0, BH_FIFO_Loop, device, 0, &id);
+
+
+	//if (!(state&SPC_ARMED)) {
+	//	///BH_FIFO_Loop(device);
+	//
+	//	
+	//		//privAcq->thread = CreateThread(NULL, 0, BH_FIFO_Loop, device, 0, &id);
+	//		
+	//}
+
+	//else {
+	//	//privAcq->readoutThread = CreateThread(NULL, 0, BH_FIFO_Loop, device, 0, &id);
+	//}
+
+
+
+	//privAcq->thread = CreateThread(NULL, 0, AcquireExtractLoop, device, 0, &id);
+	//AcquireExtractLoop(device);
+	//privAcq->thread = CreateThread(NULL, 0, AcquisitionLoop, device, 0, &id);
+	//privAcq->readoutThread = CreateThread(NULL, 0, ReadoutLoop, device, 0, &id);
+
+	
+
+	//test insert
+	EnterCriticalSection(&(privAcq->mutex));
+	privAcq->isRunning = true;
+	privAcq->stopRequested = false;
+	LeaveCriticalSection(&(privAcq->mutex));
+	WakeAllConditionVariable(&(privAcq->acquisitionFinishCondition));
+
+
+
 	return OSc_Error_Unsupported_Operation;
 }
 
