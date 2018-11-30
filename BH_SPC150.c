@@ -549,6 +549,7 @@ static DWORD WINAPI AcquireExtractLoop(void *param)
 		phot_cnt = photon_left;
 		phot_ptr = (PhotInfo64 *)&phot_buffer[phot_in_buf];
 
+
 		if (state & SPC_ARMED) {
 
 			if (state == SPC_WAIT_TRG)
@@ -585,8 +586,8 @@ static DWORD WINAPI AcquireExtractLoop(void *param)
 
 			if((state & SPC_COLTIM_OVER)|(state & SPC_TIME_OVER))
 				break;
-			//if (loopcount > 300000)//this is a temporary measure// should exit before reaching here
-				//break;
+			if (loopcount > 300000)//this is a temporary measure// should exit before reaching here
+				break;
 		}
 		
 	}
@@ -824,7 +825,7 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 		if (state & SPC_WAIT_TRG) {   // wait for trigger                
 			continue;
 		}
-		if (state != 128)
+		if (state != 192)
 		{
 			snprintf(msg, OSc_MAX_STR_LEN, "inside while, state %d", state);
 			OSc_Log_Debug(device, msg);
@@ -860,7 +861,7 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 
 			if (state & SPC_FOVFL) {
 
-
+				OSc_Log_Debug(device, "SPC Overload");
 				break;
 				//should I read the rest of the data? 
 			}
@@ -904,10 +905,11 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 		}
 		if ((state & SPC_COLTIM_OVER) | (state & SPC_TIME_OVER)) {//if overtime occured, that should be over
 																  //there should be exit code here if time over by 10 seconds
-				break; }
-//		
-		//if(loopcount > 10000)
-				//break;	
+				OSc_Log_Debug(device, "FLIM Collection time over");
+				break; 
+		}
+
+
 	}
 
 	// SPC_stop_measurement should be called even if the measurement was stopped after collection time
