@@ -26,6 +26,24 @@ struct ReadoutState
 };
 
 
+static void PopulateDefaultParameters(struct BH_PrivateData *data)
+{
+
+	data->settingsChanged = true;
+	data->acqTime = 20;
+	data->flimStarted = false;
+
+	//// TODO
+	//InitializeCriticalSection(&(data->acquisition.mutex));
+	//data->acquisition.thread = NULL;
+	//InitializeConditionVariable(&(data->acquisition.acquisitionFinishCondition));
+	//data->acquisition.running = false;
+	//data->acquisition.armed = false;
+	//data->acquisition.started = false;
+	//data->acquisition.stopRequested = false;
+	//data->acquisition.acquisition = NULL;
+}
+
 
 static OSc_Error EnumerateInstances(OSc_Device ***devices, size_t *count)
 {
@@ -95,6 +113,8 @@ static OSc_Error EnumerateInstances(OSc_Device ***devices, size_t *count)
 		OSc_Log_Error(NULL, msg);
 		return err;
 	}
+
+	PopulateDefaultParameters(GetData(device));
 
 	*devices = malloc(sizeof(OSc_Device *));
 	*count = 1;
@@ -804,8 +824,11 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 		if (state & SPC_WAIT_TRG) {   // wait for trigger                
 			continue;
 		}
-		snprintf(msg, OSc_MAX_STR_LEN, "inside while, loopcount %d", loopcount);
-		OSc_Log_Debug(device, msg);
+		if (state != 128)
+		{
+			snprintf(msg, OSc_MAX_STR_LEN, "inside while, state %d", state);
+			OSc_Log_Debug(device, msg);
+		}
 
 		if (words_left > max_words_in_buf - words_in_buf)
 			// limit current_cnt to the free space in buffer
@@ -883,8 +906,8 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 																  //there should be exit code here if time over by 10 seconds
 				break; }
 //		
-		if(loopcount > 10000)
-				break;	
+		//if(loopcount > 10000)
+				//break;	
 	}
 
 	// SPC_stop_measurement should be called even if the measurement was stopped after collection time

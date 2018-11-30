@@ -94,6 +94,11 @@ struct BH_PrivateData
 	OSc_Setting **settings;
 	size_t settingCount;
 
+	bool settingsChanged;
+
+	bool flimStarted;   // actual FLIM acquitiion starts when True
+	uint32_t acqTime; //seconds
+
 	struct AcqPrivateData acquisition;
 };
 
