@@ -654,6 +654,7 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 	SPC_get_parameters(0, &parameterCheck);
 	set_measurement_params();
 
+	acq->firstWrite = 1;
 	OSc_Log_Debug(device, "Started FLIM");
 
 	//adapted from init_fifo_measurement
@@ -758,7 +759,7 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 		max_ph_to_read = 2000000; // big fifo, fast DMA readout
 	else
 		//max_ph_to_read = 16384;
-		max_ph_to_read = 200000;
+		max_ph_to_read = 2000000;
 	if (fifo_type == FIFO_48)
 		max_words_in_buf = 3 * max_ph_to_read;
 	else
@@ -825,7 +826,7 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 		if (state & SPC_WAIT_TRG) {   // wait for trigger                
 			continue;
 		}
-		if (state != 192)
+		if (state != 192)//check for debugging, not needed (DELETE)
 		{
 			snprintf(msg, OSc_MAX_STR_LEN, "inside while, state %d", state);
 			OSc_Log_Debug(device, msg);
@@ -867,11 +868,10 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 			}
 
 			if ((state & SPC_COLTIM_OVER) | (state & SPC_TIME_OVER)) {//if overtime occured, that should be over
-					
-																	  
+					  
 																	  //there should be exit code here if time over by 10 seconds
 
-				OSc_Log_Debug(device, "FLIM Collection time over");
+				OSc_Log_Debug(device, "FLIM Collection time over 1");
 				break;
 
 			}
@@ -881,8 +881,6 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 				// save buffer contents in the file and continue reading photons
 				max_buff_reached++;
 
-	
-				//spcRet = save_photons_in_file(acq->initVariableTyope, acq->fifo_type, words_in_buf, acq->buffer);
 				acq->words_in_buf = words_in_buf;
 				spcRet= save_photons_in_file(acq);
 				totalWord += words_in_buf;
@@ -905,7 +903,7 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 		}
 		if ((state & SPC_COLTIM_OVER) | (state & SPC_TIME_OVER)) {//if overtime occured, that should be over
 																  //there should be exit code here if time over by 10 seconds
-				OSc_Log_Debug(device, "FLIM Collection time over");
+				OSc_Log_Debug(device, "FLIM Collection time over 2");
 				break; 
 		}
 
@@ -915,6 +913,10 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 	// SPC_stop_measurement should be called even if the measurement was stopped after collection time
 	//           to set DLL internal variables
 	OSc_Log_Debug(device, "Finished FLIM");
+
+	snprintf(msg, OSc_MAX_STR_LEN, "total words acquired %d", totalWord);
+	OSc_Log_Debug(device, msg);
+
 	SPC_stop_measurement(act_mod);
 	SPC_stop_measurement(act_mod);
 	totalWord += words_in_buf;
@@ -986,23 +988,22 @@ int save_photons_in_file(struct AcqPrivateData *acq) {
 	FILE *stream;
 	unsigned header;
 	//char phot_fname[80];
-	short first_write = 1;
+	
 	strcpy(acq->phot_fname, "BH_photons.spc");//name will later be collected from user //FLIMTODO
 
-	if (first_write) {
+	if (acq->firstWrite) {
 
 
 		no_of_fifo_routing_bits = 3; // it means 8 routing channels - default value
 									 //  set to 0 if router is not used
 
-				
 									 ///
 		first_frame[2] = 0;
 
 //		ret = SPC_get_fifo_init_vars(0, NULL, NULL, NULL, &spc_header);
 		
 		signed short ret = SPC_get_fifo_init_vars(0, NULL, NULL, NULL, &header);
-		if (!acq->initVariableTyope) {
+		if (!ret) {
 			first_frame[0] = (unsigned short)header;
 			first_frame[1] = (unsigned short)(header >> 16);
 		}
@@ -1011,7 +1012,7 @@ int save_photons_in_file(struct AcqPrivateData *acq) {
 		///
 
 
-		first_write = 0;
+		acq->firstWrite = 0;
 		// write 1st frame to the file
 		stream = fopen(acq->phot_fname, "wb");
 		if (!stream)

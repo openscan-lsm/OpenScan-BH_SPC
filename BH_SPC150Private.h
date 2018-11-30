@@ -81,6 +81,7 @@ struct AcqPrivateData
 	unsigned long words_in_buf;
 	unsigned short *buffer;
 	short initVariableTyope;
+	short firstWrite;
 	char phot_fname[80];//TODO
 
 
