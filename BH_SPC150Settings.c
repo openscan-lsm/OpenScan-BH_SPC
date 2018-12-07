@@ -2,6 +2,23 @@
 #include "OpenScanLibPrivate.h"
 #include "OpenScanDeviceImpl.h"
 
+static OSc_Error GetFileName(OSc_Setting *setting, char *value)
+ {
+	strcpy(value, GetData(setting->device)->flimFileName);
+	return OSc_Error_OK;
+	}
+
+static OSc_Error SetFileName(OSc_Setting *setting, const char *value)
+ {
+	strcpy(GetData(setting->device)->flimFileName, value);
+	return OSc_Error_OK;
+	}
+
+static struct OSc_Setting_Impl SettingImpl_FileName = {
+	.GetString = GetFileName,
+	.SetString = SetFileName,
+};
+
 static OSc_Error GetFLIMStarted(OSc_Setting *setting, bool *value)
 {
 	*value = GetData(setting->device)->flimStarted;
@@ -59,6 +76,10 @@ OSc_Error BH_SPC150PrepareSettings(OSc_Device *device)
 	if (GetData(device)->settings)
 		return OSc_Error_OK;
 
+	OSc_Setting *fileName;
+	OSc_Return_If_Error(OSc_Setting_Create(&fileName, device, "BH-FileName", OSc_Value_Type_String,
+		&SettingImpl_FileName, NULL));
+
 	OSc_Setting *flimStarted;
 	OSc_Return_If_Error(OSc_Setting_Create(&flimStarted, device, "BH-StartFLIM", OSc_Value_Type_Bool,
 		&SettingImpl_FLIMStarted, NULL));
@@ -70,7 +91,7 @@ OSc_Error BH_SPC150PrepareSettings(OSc_Device *device)
 
 
 	OSc_Setting *ss[] = {
-		flimStarted, acqTime,
+		fileName, flimStarted, acqTime,
 	};  // OSc_Device_Get_Settings() returns count = 1 when this has NULL inside
 	size_t nSettings = sizeof(ss) / sizeof(OSc_Setting *);
 	if (*ss == NULL)

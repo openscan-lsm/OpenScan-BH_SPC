@@ -28,10 +28,11 @@ struct ReadoutState
 
 static void PopulateDefaultParameters(struct BH_PrivateData *data)
 {
-
 	data->settingsChanged = true;
 	data->acqTime = 20;
 	data->flimStarted = false;
+
+	strcpy(data->flimFileName, "default-BH-FLIM-data");
 
 	//// TODO
 	//InitializeCriticalSection(&(data->acquisition.mutex));

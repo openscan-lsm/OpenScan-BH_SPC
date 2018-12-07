@@ -92,6 +92,8 @@ struct BH_PrivateData
 {
 	short moduleNr;
 
+	char flimFileName[OSc_MAX_STR_LEN + 1]; // for saving the raw data to hard drive
+
 	OSc_Setting **settings;
 	size_t settingCount;
 
