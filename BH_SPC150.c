@@ -2,7 +2,7 @@
 #include "BH_SPC150Private.h"
 
 #include <stdio.h>
-
+#pragma pack(1)
 
 static OSc_Device **g_devices;
 static size_t g_deviceCount;
@@ -709,6 +709,8 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 			fifo_type = FIFO_150;
 		else  // FIFO_IMG ,  marker 3 can be enabled via ROUTING_MODE
 			fifo_type = FIFO_IMG;
+
+		acq->fifo_type = fifo_type;
 		break;
 
 	}
@@ -780,7 +782,7 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 
 	words_left = words_to_read;
 	//char phot_fname[80];//TODO
-	strcpy(acq->phot_fname, "test_photons1.spc");//name will later be collected from user //FLIMTODO
+	strcpy(acq->phot_fname, "BH_photons.spc");//name will later be collected from user //FLIMTODO
 //	buffer = (unsigned short *)malloc(max_words_in_buf * sizeof(unsigned short));
 	int totalWord = 0;
 	int loopcount = 0;
@@ -816,6 +818,7 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 
 	OSc_Log_Debug(device, msg);
 
+	
 	while (!spcRet) {
 		loopcount++;
 		// now test SPC state and read photons
@@ -928,8 +931,9 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 	}
 	//savign the photon(converted to exponential file)
 	//this funtion should execute after the acquisition is over
-
+	
 	//BH_extractPhoton(device);
+	foo(device);//write the SDT file
 	EnterCriticalSection(&(acq->mutex));
 	acq->isRunning = false;
 	acq->stopRequested = true;
@@ -1042,8 +1046,12 @@ int save_photons_in_file(struct AcqPrivateData *acq) {
 
 int foo(void *param) {//write SDT
 	
+	
+
 	OSc_Device *device = (OSc_Device *)param;
 	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
+	//SPC_save_data_to_sdtfile(-1, acq->buffer, 50000, "testSDT.sdt"); // cannot run on mode=5
+
 
 	char file_info[512];
 	short setup_length;
@@ -1085,14 +1093,14 @@ int foo(void *param) {//write SDT
 
 	SPCdata parameters;
 	SPC_get_parameters(MODULE, &parameters);//
+
+
+
 	int FLIM_ADCResolution = 8;
 
 	///size change start///////
 	int factorforSize =2;
 	int factorPixel = 1;
-
-
-
 
 	int sizeinPixel = 512 / factorforSize;
 	int pixelsPerLine = sizeinPixel;
@@ -1141,11 +1149,9 @@ int foo(void *param) {//write SDT
 	header.meas_desc_block_length = sizeof(MeasureInfo);
 	header.no_of_meas_desc_blocks = 1;
 	header.data_block_offs = header.meas_desc_block_offs + header.meas_desc_block_length * header.no_of_meas_desc_blocks;
-	if (false)  //*MJF+2 8/23/11
-		header.data_block_length = (1 << (FLIM_ADCResolution)) * sizeof(short);  //*MJF 7/25/13 'numChannels' -> 'SP->nChannels'
-	else
+
 		//header.data_block_length = SP->pixelsPerLine * SP->linesPerFrame * (1 << SP->FLIM_ADCResolution) * sizeof(short);  //*MJF 7/25/13 'numChannels' -> 'SP->nChannels'
-		header.data_block_length = pixelsPerLine * linesPerFrame * (1 << FLIM_ADCResolution) * sizeof(short);  //*MJF 7/25/13 'numChannels' -> 'SP->nChannels'
+	header.data_block_length = pixelsPerLine * linesPerFrame * (1 << FLIM_ADCResolution) * sizeof(short);  //*MJF 7/25/13 'numChannels' -> 'SP->nChannels'
 	header.no_of_data_blocks = 1;
 	header.header_valid = BH_HEADER_VALID;
 	header.reserved1 = header.no_of_data_blocks;
@@ -1221,6 +1227,7 @@ int foo(void *param) {//write SDT
 	meas_desc.overflow_corr_factor = 0.0;  //value from WiscScan
 	meas_desc.adc_zoom = parameters.adc_zoom;
 	meas_desc.cycles = 1;
+
 	if (false) {  //*MJF+3 8/23/11
 		meas_desc.scan_x = 1;
 		meas_desc.scan_y = 1;
@@ -1359,7 +1366,7 @@ int foo(void *param) {//write SDT
 
 	}
 
-
+	
 
 	sdt_file_header dest_header;
 	//CFile dest_file;
@@ -1372,7 +1379,7 @@ int foo(void *param) {//write SDT
 
 	//default file
 	char dest_filename[500];
-	sprintf_s(dest_filename, 500, "traildata.sdt");//it was *.bin
+	sprintf_s(dest_filename, 500, "BH_data.sdt");//it was *.bin
 
 
 													 //default file end
@@ -1396,8 +1403,21 @@ int foo(void *param) {//write SDT
 	ret = fwrite(iPhotonCountBuffer, sizeof(short), iPhotonCountBufferSize / sizeof(short), headerFile);
 
 
-	free(iPhotonCountBuffer);
+	
 	fclose(headerFile);
+	
+	/* additioon to check iphoton data */
+	FILE* headerFile1;
+	fopen_s(&headerFile1, "BH_datablock", "wb");
+	
+	ret = fwrite(iPhotonCountBuffer, sizeof(short), iPhotonCountBufferSize / sizeof(short), headerFile);
+
+	//OSc_Log_Debug(device, "User interruption for FooLoop...");
+
+	/* addition ends */
+	free(iPhotonCountBuffer);
+
+	fclose(headerFile1);
 
 	flagFreeBuff = 1;//emptied
 
@@ -1535,9 +1555,11 @@ bool BH_saveLTDataSDT(void *param) {
 	char file_info[512];
 	short setup_length;
 	char setup[32];
+
 	bhfile_header header;
 	MeasureInfo meas_desc;
 	BHFileBlockHeader block_header;
+
 	unsigned int iPhotonCountBufferSize;
 	short *iPhotonCountBuffer;//should be void*, but works in wiscScan
 	PhotStreamInfo stream_info;
@@ -1567,7 +1589,7 @@ bool BH_saveLTDataSDT(void *param) {
 		}
 	}
 
-	acq->streamHandle = SPC_init_phot_stream(acq->fifo_type, acq->phot_fname, 1, stream_type, what_to_read);
+	acq->streamHandle = SPC_init_phot_stream(acq->fifo_type, acq->phot_fname, 1, stream_type, what_to_read);//can directly asssign
 
 
 	SPCdata parameters;
@@ -1578,17 +1600,7 @@ bool BH_saveLTDataSDT(void *param) {
 	int factorforSize = 1;
 	int factorPixel = 1;
 
-	//working code begin
-	//
-	//if (is256used) {
-	//	factorforSize = 2;//used for 1024->512 //should be 2 for 512->256, 1 for 512->512
-	//					  //factorPixel=2; // 1 for 512->512 //2 for 512->256//1 for 1024-> 512
-	//}
-	//else if (is512used) {
 
-	//	factorforSize = 1;//used for 1024->512 //should be 2 for 512->256, 1 for 512->512
-	//					  //factorPixel=1; // 1 for 512->512 //2 for 512->256//1 for 1024-> 512	
-	//}
 
 
 
