@@ -766,7 +766,7 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 		max_ph_to_read = 2000000; // big fifo, fast DMA readout
 	else
 		//max_ph_to_read = 16384;
-		max_ph_to_read = 2000000;
+		max_ph_to_read = 200000;
 	if (fifo_type == FIFO_48)
 		max_words_in_buf = 3 * max_ph_to_read;
 	else
@@ -775,20 +775,20 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 	////////
 
 
-	//unsigned  short* test_buffer= (unsigned short *)malloc(max_words_in_buf * sizeof(unsigned short));
+	
 
-	acq->buffer = (unsigned short *)malloc(max_words_in_buf * sizeof(unsigned short));
+	acq->buffer = (unsigned short *)malloc(max_words_in_buf * sizeof(unsigned short)); //memory allocation for FIFO data collection
 	if (acq->buffer ==NULL)
 		return;
 	SPC_get_parameters(0, &parameterCheck);
-	photons_to_read = 10000000;
+	photons_to_read = 100000000;
 
 	words_to_read = 2 * photons_to_read; //max photon in one acquisition cycle
 
 	words_left = words_to_read;
-	//char phot_fname[80];//TODO
+	
 	strcpy(acq->phot_fname, "BH_photons.spc");//name will later be collected from user //FLIMTODO
-//	buffer = (unsigned short *)malloc(max_words_in_buf * sizeof(unsigned short));
+
 	int totalWord = 0;
 	int loopcount = 0;
 	int totalPhot = 0;
@@ -906,6 +906,7 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 
 				words_left -= current_cnt;
 				words_in_buf += current_cnt; //should be reading until less than zero
+				acq->words_in_buf += current_cnt;
 				break;
 			}
 		}
@@ -938,6 +939,10 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 	//this funtion should execute after the acquisition is over
 	
 	//BH_extractPhoton(device);
+
+	if (acq->buffer) {
+		free(acq->buffer);
+	}
 	BH_LTDataSave(device);//write the SDT file
 	EnterCriticalSection(&(acq->mutex));
 	acq->isRunning = false;
