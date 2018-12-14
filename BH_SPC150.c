@@ -54,7 +54,7 @@ static OSc_Error EnumerateInstances(OSc_Device ***devices, size_t *count)
 	int active_board[1];
 	SPCModInfo m_ModInfo;
 	//short status=SPC_get_init_status();
-
+	int  a = 0;
 	//spcErr = SPC_close();  // close SPC150 if it remains open from previous session
 	spcErr = SPC_init("cspcm.ini");
 	if (spcErr < 0)
@@ -1094,8 +1094,8 @@ int BH_LTDataSave(void *param) {//write SDT
 		}
 	}
 	//"testExternalPxl_5us.spc"
-	//acq->streamHandle = SPC_init_phot_stream(acq->fifo_type, acq->phot_fname, 1, stream_type, what_to_read);
-	acq->streamHandle = SPC_init_phot_stream(acq->fifo_type, "testExternalPxl_5us.spc", 1, stream_type, what_to_read);
+	acq->streamHandle = SPC_init_phot_stream(acq->fifo_type, acq->phot_fname, 1, stream_type, what_to_read);
+	//acq->streamHandle = SPC_init_phot_stream(acq->fifo_type, "testExternalPxl_5us.spc", 1, stream_type, what_to_read);
 
 	SPCdata parameters;
 	SPC_get_parameters(MODULE, &parameters);//
@@ -1224,8 +1224,8 @@ int BH_LTDataSave(void *param) {//write SDT
 	meas_desc.scan_x = pixelsPerLine;
 	meas_desc.scan_y = linesPerFrame;
 
-	meas_desc.scan_x = 0; //1
-	meas_desc.scan_y = 0; //1
+	meas_desc.scan_x = 256; //1
+	meas_desc.scan_y = 256; //1
 	meas_desc.scan_rx = 1;
 	meas_desc.scan_ry = 1;
 
@@ -1391,7 +1391,12 @@ int BH_LTDataSave(void *param) {//write SDT
 
 	//default file
 	char dest_filename[500];
-	sprintf_s(dest_filename, 500, "BH_data.sdt");//it was *.bin
+//	sprintf_s(dest_filename, 500, "BH_data.sdt");//it was *.bin
+
+//	sprintf_s(dest_filename, 500, "trialCat");//it was *.bin
+
+	sprintf_s(dest_filename, 500, GetData(device)->flimFileName);//it was *.bin
+	strcat(dest_filename, ".sdt");
 
 	//GetData(device)->flimFileName;
 
@@ -1413,21 +1418,18 @@ int BH_LTDataSave(void *param) {//write SDT
 
 
 	
+	
+	
+
+	
+//	ret = fwrite(iPhotonCountBuffer, sizeof(short), iPhotonCountBufferSize / sizeof(short), headerFile);
+
 	fclose(headerFile);
-	
-	/* additioon to check iphoton data */
-	FILE* headerFile1;
-	fopen_s(&headerFile1, "BH_datablock", "wb");
-	
-	ret = fwrite(iPhotonCountBuffer, sizeof(short), iPhotonCountBufferSize / sizeof(short), headerFile);
 
 	//OSc_Log_Debug(device, "User interruption for FooLoop...");
 
 	/* addition ends */
 	free(iPhotonCountBuffer);
-
-	fclose(headerFile1);
-
 	flagFreeBuff = 1;//emptied//needed when save button is implemented
 
 	
