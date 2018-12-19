@@ -7,11 +7,6 @@
 
 static OSc_Device **g_devices;
 static size_t g_deviceCount;
-OSc_Device *device1;
-
-bool BH_saveLTDataSDT(struct AcqPrivateData *acq);
-unsigned short compute_checksum(void* hdr);
-int save_photons_in_file(struct AcqPrivateData *acq);
 
 
 struct ReadoutState
@@ -32,6 +27,7 @@ static void PopulateDefaultParameters(struct BH_PrivateData *data)
 	data->settingsChanged = true;
 	data->acqTime = 20;
 	data->flimStarted = false;
+	data->flimDone = false;
 
 	strcpy(data->flimFileName, "default-BH-FLIM-data");
 
@@ -64,10 +60,6 @@ static OSc_Error EnumerateInstances(OSc_Device ***devices, size_t *count)
 		OSc_Log_Error(NULL, msg);
 		return OSc_Error_SPC150_CANNOT_OPEN_FILE;
 	}
-
-
-
-
 
 	spcRet = SPC_get_module_info(MODULE, (SPCModInfo *)&m_ModInfo);
 	if (spcRet != 0) {
@@ -279,382 +271,16 @@ static OSc_Error BH_GetBytesPerSample(OSc_Device *device, uint32_t *bytesPerSamp
 }
 
 
-// TODO: this needs to called somewhere in the code; right now it is not used
-// and that is why we did not see any .spc data saved to disk
-static short SaveData(OSc_Device *device, unsigned short *buffer, size_t size)
+// Current main loop for FLIM acquisition
+static DWORD WINAPI BH_FIFO_Loop(void *param)
 {
-	short moduleNr = GetData(device)->moduleNr;
+	OSc_Return_If_Error(set_measurement_params());
 
-	FILE *fp;
-	if (!GetData(device)->acquisition.wroteHeader)
-	{
-		unsigned header;
-		signed short ret = SPC_get_fifo_init_vars(moduleNr, NULL, NULL, NULL, &header);
-		if (ret)
-			return ret;
-
-		// The following (including the size-2 fwrite) is just byte swapping, I think.
-		// Let's not mess with it for now.
-		unsigned short headerSwapped[] =
-		{
-			(uint16_t)header,
-			(uint16_t)(header >> 16),
-		};
-
-		fp = fopen(GetData(device)->acquisition.fileName, "wb");
-		if (!fp)
-			return -1;
-		fwrite(&headerSwapped[0], 2, 2, fp);
-
-		GetData(device)->acquisition.wroteHeader = true;
-	}
-	else {
-		fp = fopen(GetData(device)->acquisition.fileName, "ab");
-		if (!fp)
-			return -1;
-		fseek(fp, 0, SEEK_END);
-	}
-
-	size_t bytesWritten = fwrite(buffer, 1, size, fp);
-	fclose(fp);
-
-	if (bytesWritten < size)
-		return -1;
-
-	return 0;
-}
-
-
-static DWORD WINAPI ReadoutLoop(void *param)
-{
-	OSc_Device *device = (OSc_Device *)param;
-	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
-	short streamHandle = acq->streamHandle;
-
-	PhotInfo64 *photonBuffer = calloc(1024, sizeof(PhotInfo64));
-	int photons_to_read = 15000000;
-
-	const size_t lineBufferAllocSize = 1024 * 1024;
-	struct ReadoutState readoutState;
-	readoutState.lineBufferSize = lineBufferAllocSize;
-
-	readoutState.lineBuffer = malloc(readoutState.lineBufferSize * sizeof(PhotInfo64));
-	readoutState.linePhotonCount = 0;
-	readoutState.lineNr = 0;
-	readoutState.frameNr = 0;
-	
-	int readLoopCount = 0;
-	for (;;)
-	{
-		readLoopCount++;
-		uint64_t photonCount = 0;
-		short spcRet = SPC_get_photons_from_stream(streamHandle, photonBuffer, (int *)*(&photonCount));
-		switch (spcRet)
-		{
-		case 0: // No error
-			break;
-		case 1: // Stop condition
-			break;
-		case 2: // End of stream
-			break;
-		default: // Error code
-			goto cleanup;
-		}
-
-		// Create intensity image for now
-
-		uint64_t pixelTime = acq->pixelTime;
-
-		for (PhotInfo64 *photon = photonBuffer; photon < photonBuffer + photonCount; ++photon)
-		{
-			// TODO Check FIFO overflow flag
-
-			if (photon->flags & NOT_PHOTON)
-			{
-				if (photon->flags & P_MARK)
-				{
-					// Not implemented yet; current impl uses clock
-				}
-				if (photon->flags & L_MARK)
-				{
-					PhotInfo64 *bufferedPhoton = readoutState.lineBuffer;
-					PhotInfo64 *endOfLineBuffer = readoutState.lineBuffer +
-						readoutState.linePhotonCount;
-					uint64_t endOfLineTime = photon->mtime;
-					uint64_t startOfLineTime = endOfLineTime - acq->pixelTime * acq->width;
-					uint16_t pixelPhotonCount = 0;
-
-					// Discard photons occurring before the first pixel of the line
-					while (bufferedPhoton->mtime < startOfLineTime)
-						++bufferedPhoton;
-
-					for (size_t pixel = 0; pixel < acq->width; ++pixel)
-					{
-						uint64_t pixelStartTime = startOfLineTime + pixel * acq->pixelTime;
-						uint64_t nextPixelStartTime = pixelStartTime + acq->pixelTime;
-						while (bufferedPhoton < endOfLineBuffer &&
-							bufferedPhoton->mtime < nextPixelStartTime)
-						{
-							++pixelPhotonCount;
-							++bufferedPhoton;
-						}
-
-						acq->frameBuffer[readoutState.lineNr * acq->width + pixel] = pixelPhotonCount;
-						pixelPhotonCount = 0;
-					}
-
-					readoutState.linePhotonCount = 0;
-					readoutState.lineNr++;
-				}
-				if (photon->flags & F_MARK)
-				{
-					acq->acquisition->frameCallback(acq->acquisition, 0,
-						acq->frameBuffer, acq->acquisition->data);
-					readoutState.frameNr++;
-					readoutState.lineNr = 0;
-					if (readoutState.frameNr == acq->acquisition->numberOfFrames)
-					{
-						EnterCriticalSection(&(GetData(device)->acquisition.mutex));
-						acq->stopRequested = true;
-						LeaveCriticalSection(&(GetData(device)->acquisition.mutex));
-					}
-					goto cleanup; // Exit loop
-				}
-			}
-			else // A bona fide photon
-			{
-				if (readoutState.linePhotonCount >= readoutState.lineBufferSize)
-				{
-					readoutState.lineBufferSize += lineBufferAllocSize;
-					readoutState.lineBuffer = realloc(readoutState.lineBuffer,
-						readoutState.lineBufferSize);
-				}
-
-				memcpy(&(readoutState.lineBuffer[readoutState.linePhotonCount++]),
-					photon, sizeof(PhotInfo64));
-			}
-		}
-	}
-
-cleanup:
-	free(readoutState.lineBuffer);
-	free(photonBuffer);
-
-	SPC_close_phot_stream(acq->streamHandle);
-
-	EnterCriticalSection(&(acq->mutex));
-	acq->isRunning = false;
-	LeaveCriticalSection(&(acq->mutex));
-	WakeAllConditionVariable(&(acq->acquisitionFinishCondition));
-
-	return 0;
-}
-
-
-static DWORD WINAPI AcquisitionLoop(void *param)
-{
-	OSc_Device *device = (OSc_Device *)param;
-	short moduleNr = GetData(device)->moduleNr;
-	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
-	short streamHandle = acq->streamHandle;
-
-	short spcRet = SPC_start_measurement(moduleNr);
-	if (spcRet != 0)
-	{
-		return OSc_Error_Unknown;
-	}
-
-	// The flow of data is
-	// SPC hardware -> "fifo" -> "stream" -> our memory buffer -> file/OpenScan
-	// The fifo is part of the SPC device; the stream is in the PC RAM but
-	// managed by the BH library.
-	// In this thread we handle the transfer from fifo to stream.
-	// The readout thread will handle downstream from the stream.
-	int loopcount = 0;
-	while (!spcRet)
-	{
-		loopcount++;
-		EnterCriticalSection(&(acq->mutex));
-		bool stopRequested = acq->stopRequested;
-		LeaveCriticalSection(&(acq->mutex));
-		if (stopRequested)
-			break;
-
-		short state;
-		SPC_test_state(moduleNr, &state);
-		if (state == SPC_WAIT_TRG)
-			continue; // TODO sleep briefly?
-		if (state & SPC_FEMPTY)
-			continue; // TODO sleep briefly?
-
-		// For now, use a 1 MWord read at a time. Will need to measure performance, perhaps.
-		unsigned long words = 1 * 1024 * 1024;
-		spcRet = SPC_read_fifo_to_stream(streamHandle, moduleNr, &words);
-
-		if (state & SPC_ARMED && state & SPC_FOVFL)
-			break; // TODO Error
-		if (state & SPC_TIME_OVER)
-			break;
-	}
-
-	SPC_stop_measurement(moduleNr);
-	// It has been observed that sometimes the measurement needs to be stopped twice.
-	SPC_stop_measurement(moduleNr);
-
-	// TODO Somebody has to close the stream, but that needs to happen after we have
-	// read all the photons from it. Also in the case of error/overflow.
-
-	return 0;
-}
-
-static DWORD WINAPI AcquireExtractLoop(void *param)
-//static short AcquireExtractLoop(OSc_Device *device)
-{
-	OSc_Device *device = (OSc_Device *)param;
-	short moduleNr = GetData(device)->moduleNr;
-	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
-	short streamHandle = acq->streamHandle;
-
-	unsigned long photons_to_read = 15000000;
-	unsigned long photon_left= photons_to_read;
-	unsigned long phot_in_buf = 0;
-	unsigned long phot_cnt, current_cnt;
-	PhotInfo64 phot_info64, *phot_buffer, *phot_ptr;
-	phot_buffer = (PhotInfo64 *)calloc(photons_to_read, sizeof(PhotInfo64));
-
-	short spcRet = SPC_start_measurement(moduleNr);
-	if (spcRet != 0)
-	{
-		return OSc_Error_Unknown;
-	}
-
-	// The flow of data is
-	// SPC hardware -> "fifo" -> "stream" -> our memory buffer -> file/OpenScan
-	// The fifo is part of the SPC device; the stream is in the PC RAM but
-	// managed by the BH library.
-	// In this thread we handle the transfer from fifo to stream.
-	// The readout thread will handle downstream from the stream.
-	int loopcount = 0;
-	while (!spcRet)
-	{
-		loopcount++;
-		EnterCriticalSection(&(acq->mutex));
-		bool stopRequested = acq->stopRequested;
-		LeaveCriticalSection(&(acq->mutex));
-		if (stopRequested)
-			break;
-
-		short state;
-		SPC_test_state(moduleNr, &state);
-
-		current_cnt = photon_left * 2;//2
-		phot_cnt = photon_left;
-		phot_ptr = (PhotInfo64 *)&phot_buffer[phot_in_buf];
-
-
-		if (state & SPC_ARMED) {
-
-			if (state == SPC_WAIT_TRG)
-				continue; // TODO sleep briefly?
-			if (state & SPC_FEMPTY)
-				continue; // TODO sleep briefly?
-
-
-			spcRet = SPC_read_fifo_to_stream(streamHandle, moduleNr, &current_cnt);
-			if (spcRet < 0)
-				break;
-			spcRet = SPC_get_photons_from_stream(streamHandle, phot_ptr, (int *)&phot_cnt);
-			if (spcRet == 2 || spcRet == -SPC_STR_NO_START || spcRet == -SPC_STR_NO_STOP) {
-				// end of the stream or start/stop condition not found yet
-				// during running measurement these errors should be ignored
-				spcRet = 0;
-			}
-
-
-			//conditional values of return TODO
-
-			photon_left -= phot_cnt;
-			phot_in_buf += phot_cnt;
-
-			if (spcRet == 1) // stop condition reached
-				break;
-
-			if (phot_in_buf >= photons_to_read)
-				break;   // required no of photons read already
-
-
-			if (state & SPC_FOVFL)
-				break;
-
-			if((state & SPC_COLTIM_OVER)|(state & SPC_TIME_OVER))
-				break;
-			if (loopcount > 300000)//this is a temporary measure// should exit before reaching here
-				break;
-		}
-		
-	}
-
-	SPC_stop_measurement(moduleNr);
-	// It has been observed that sometimes the measurement needs to be stopped twice.
-	SPC_stop_measurement(moduleNr);
-
-	// TODO Somebody has to close the stream, but that needs to happen after we have
-	// read all the photons from it. Also in the case of error/overflow.
-
-	while (photon_left && !spcRet) {
-		// get rest photons from the stream
-		phot_cnt = photon_left;
-		phot_ptr = (PhotInfo64 *)&phot_buffer[phot_in_buf];
-		spcRet = SPC_get_photons_from_stream(streamHandle, phot_ptr, (int *)&phot_cnt);
-		photon_left -= phot_cnt; phot_in_buf += phot_cnt;
-	}
-	EnterCriticalSection(&(acq->mutex));
-	acq->isRunning = false;
-	LeaveCriticalSection(&(acq->mutex));
-	WakeAllConditionVariable(&(acq->acquisitionFinishCondition));
-	return 0;
-}
-
-static DWORD WINAPI fooLOOP(void *param) {
-	OSc_Device *device = (OSc_Device *)param;
-	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
-
-
-	while (true) {
-	//	sleep(10);
-
-		bool stopRequested;
-		EnterCriticalSection(&(GetData(device)->acquisition.mutex));
-		stopRequested = GetData(device)->acquisition.stopRequested;
-		LeaveCriticalSection(&(GetData(device)->acquisition.mutex));
-		if (stopRequested)
-		{
-			OSc_Log_Debug(device, "User interruption for FooLoop...");
-			
-
-			break;
-		}
-	
-	}
-	EnterCriticalSection(&(acq->mutex));
-	acq->isRunning = false;
-	acq->stopRequested = true;
-	LeaveCriticalSection(&(acq->mutex));
-	WakeAllConditionVariable(&(acq->acquisitionFinishCondition));
-
-}
-
-
-static DWORD WINAPI BH_FIFO_Loop(void *param){
-//void BH_FIFO_Loop(void *param) {
-//static DWORD WINAPI BH_FIFO_Loop(void *param) {
-
-	set_measurement_params();
 	OSc_Device *device = (OSc_Device *)param;
 	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
 	SPCdata parameterCheck;
 	SPC_get_parameters(0, &parameterCheck);
-	set_measurement_params();
+	OSc_Return_If_Error(set_measurement_params());
 
 	acq->firstWrite = 1;
 	OSc_Log_Debug(device, "Started FLIM");
@@ -747,7 +373,7 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 	}
 	SPC_get_parameters(0, &parameterCheck);
 	// switch off stop_on_overfl
-	uint32_t collectionTime = GetData(device)->acqTime;
+	float collectionTime = (float)GetData(device)->acqTime;
 	SPC_set_parameter(-1, COLLECT_TIME, collectionTime);//setting the collection time from the device property browser
 
 	SPC_set_parameter(act_mod, STOP_ON_OVFL, 1);
@@ -757,8 +383,6 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 	if (fifo_stopt_possible) {
 
 		SPC_set_parameter(act_mod, STOP_ON_TIME, 1);
-		
-
 	}
 
 	SPC_get_parameters(0, &parameterCheck);//check the time 
@@ -772,14 +396,10 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 	else
 		max_words_in_buf = 2 * max_ph_to_read;
 
-	////////
-
-
-	
 
 	acq->buffer = (unsigned short *)malloc(max_words_in_buf * sizeof(unsigned short)); //memory allocation for FIFO data collection
 	if (acq->buffer ==NULL)
-		return;
+		return 0;
 	SPC_get_parameters(0, &parameterCheck);
 	photons_to_read = 100000000;
 
@@ -823,7 +443,8 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 
 	OSc_Log_Debug(device, msg);
 
-	
+	// keep acquiring photon data until the set acquisition time is over
+	GetData(device)->flimDone = false; 
 	while (!spcRet) {
 		loopcount++;
 		// now test SPC state and read photons
@@ -851,9 +472,7 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 		SPCdata parameterCheck1;
 		SPC_get_parameters(0, &parameterCheck1);
 
-		
 
-		
 		if (state & SPC_ARMED) {  //  system armed   //continues to get data
 			
 			if (state & SPC_FEMPTY)
@@ -915,8 +534,6 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 				OSc_Log_Debug(device, "FLIM Collection time over 2");
 				break; 
 		}
-
-
 	}
 
 	// SPC_stop_measurement should be called even if the measurement was stopped after collection time
@@ -943,20 +560,26 @@ static DWORD WINAPI BH_FIFO_Loop(void *param){
 	if (acq->buffer) {
 		free(acq->buffer);
 	}
-	BH_LTDataSave(device);//write the SDT file
+
+	OSc_Error err;
+	//write the SDT file
+	if (OSc_Check_Error(err, BH_LTDataSave(device)))
+	{
+		OSc_Log_Error(device, "Error writing SDT file");
+		return 0;
+	}
+
 	EnterCriticalSection(&(acq->mutex));
 	acq->isRunning = false;
 	acq->stopRequested = true;
 	LeaveCriticalSection(&(acq->mutex));
 	WakeAllConditionVariable(&(acq->acquisitionFinishCondition));
 
-
-
-	
+	return 0;
 }
 
 
-int set_measurement_params() {
+OSc_Error set_measurement_params() {
 	/*
 	-the SPC parameters must be set(SPC_init or SPC_set_parameter(s)),
 		-the SPC memory must be configured(SPC_configure_memory in normal modes),
@@ -989,10 +612,11 @@ int set_measurement_params() {
 		return ret;
 	}
 
-	return 0;
+	return OSc_Error_OK;
 }
-//int save_photons_in_file(short fifoTypeReturn, short fifo_type, unsigned long words_in_buf, short *buffer) {
-int save_photons_in_file(struct AcqPrivateData *acq) {
+
+
+OSc_Error save_photons_in_file(struct AcqPrivateData *acq) {
 	
 	long ret;
 	int i;
@@ -1023,8 +647,6 @@ int save_photons_in_file(struct AcqPrivateData *acq) {
 		}
 		else
 			return -1;
-		///
-
 
 		acq->firstWrite = 0;
 		// write 1st frame to the file
@@ -1050,19 +672,18 @@ int save_photons_in_file(struct AcqPrivateData *acq) {
 	if (ret != 2 * acq->words_in_buf)
 		return -1;     // error type in errno
 		
-	return 0;
+	return OSc_Error_OK;
 
 }
 
-int BH_LTDataSave(void *param) {//write SDT
-	
-	
 
+// write SDT file
+OSc_Error BH_LTDataSave(void *param) 
+{
 	OSc_Device *device = (OSc_Device *)param;
 	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
 	///uint32_t collectionTime = GetData(device)->acqTime; //get collection time
 	//SPC_save_data_to_sdtfile(-1, acq->buffer, 50000, "testSDT.sdt"); // cannot run on mode=5
-
 
 	char file_info[512];
 	short setup_length;
@@ -1122,8 +743,6 @@ int BH_LTDataSave(void *param) {//write SDT
 	
 	//working code ends
 
-
-
 	///end test block
 	SYSTEMTIME st;
 	GetSystemTime(&st);
@@ -1154,7 +773,7 @@ int BH_LTDataSave(void *param) {//write SDT
 	header.no_of_meas_desc_blocks = 1;
 	header.data_block_offs = header.meas_desc_block_offs + header.meas_desc_block_length * header.no_of_meas_desc_blocks;
 
-		//header.data_block_length = SP->pixelsPerLine * SP->linesPerFrame * (1 << SP->FLIM_ADCResolution) * sizeof(short);  //*MJF 7/25/13 'numChannels' -> 'SP->nChannels'
+	//header.data_block_length = SP->pixelsPerLine * SP->linesPerFrame * (1 << SP->FLIM_ADCResolution) * sizeof(short);  //*MJF 7/25/13 'numChannels' -> 'SP->nChannels'
 	header.data_block_length = pixelsPerLine * linesPerFrame * (1 << FLIM_ADCResolution) * sizeof(short);  
 	header.no_of_data_blocks = 1;
 	header.header_valid = BH_HEADER_VALID;
@@ -1215,7 +834,6 @@ int BH_LTDataSave(void *param) {//write SDT
 	meas_desc.pix_clk = parameters.pixel_clock;
 	meas_desc.trigger = parameters.trigger;
 
-
 	meas_desc.scan_rx = 1; 
 	meas_desc.scan_ry = 1;
 	meas_desc.fifo_typ = 0;  //copied value from WiscScan, which in turn got it from looking at an SDT file
@@ -1242,14 +860,11 @@ int BH_LTDataSave(void *param) {//write SDT
 	meas_desc.xy_gain = parameters.xy_gain;
 	meas_desc.dig_flags = parameters.master_clock;
 
-
-	
 	// Create Data Block Header
 	//BHFileBlockHeader block_header;
 	block_header.lblock_no = 1;
 	block_header.data_offs = header.data_block_offs + sizeof(BHFileBlockHeader);
 	block_header.next_block_offs = block_header.data_offs + header.data_block_length;
-
 
 	block_header.block_type = MEAS_DATA_FROM_FILE | PAGE_BLOCK;//this one works for our case
 																   //block_header.block_type = 1;
@@ -1257,13 +872,11 @@ int BH_LTDataSave(void *param) {//write SDT
 	block_header.lblock_no = ((MODULE & 3) << 24);
 	block_header.block_length = header.data_block_length;
 
-
-
 	iPhotonCountBufferSize = pixelsPerLine * linesPerFrame * (1 << FLIM_ADCResolution) * sizeof(short);//this size should be dynamically allocated in the future
 																									   //short *iPhotonCountBuffer;//should be void*
 	iPhotonCountBuffer = (short*)malloc(iPhotonCountBufferSize);
 	if (iPhotonCountBuffer == NULL) {
-		return false;
+		return OSc_Error_SPC150_Buffer_Empty;
 	}
 
 	flagFreeBuff = 0;//0- indicates buffer is full//1 indicates empty
@@ -1378,21 +991,12 @@ int BH_LTDataSave(void *param) {//write SDT
 				//}
 			}
 		}
-
-
-
 	}
-
-	
 
 	sdt_file_header dest_header;
 	//CFile dest_file;
 	data_block_header dest_dbh;
 	SYSTEMTIME now;
-
-
-
-
 
 	//default file
 	char dest_filename[500];
@@ -1417,17 +1021,7 @@ int BH_LTDataSave(void *param) {//write SDT
 	ret = fwrite(setup, setup_length, 1, headerFile);  // Write Setup Block
 	ret = fwrite(&meas_desc, sizeof(MeasureInfo), 1, headerFile);  //Write Measurement Description Block
 	ret = fwrite(&block_header, sizeof(data_block_header), 1, headerFile);  //Write Data Block Header
-
-	
 	ret = fwrite(iPhotonCountBuffer, sizeof(short), iPhotonCountBufferSize / sizeof(short), headerFile);
-
-
-	
-	
-	
-
-	
-//	ret = fwrite(iPhotonCountBuffer, sizeof(short), iPhotonCountBufferSize / sizeof(short), headerFile);
 
 	fclose(headerFile);
 
@@ -1437,12 +1031,16 @@ int BH_LTDataSave(void *param) {//write SDT
 	free(iPhotonCountBuffer);
 	flagFreeBuff = 1;//emptied//needed when save button is implemented
 
-	
+    // indicate the status of FLIM acquisition
+	GetData(device)->flimDone = true;
 
-	return true;
+	return OSc_Error_OK;
 }
 
-int BH_extractPhoton(void *param) {
+
+// plan to use to extract intensity image from spc data
+// not used in current version
+OSc_Error BH_extractPhoton(void *param) {
 	//int a = 1;
 	OSc_Device *device = (OSc_Device *)param;
 	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
@@ -1508,8 +1106,6 @@ int BH_extractPhoton(void *param) {
 			ret = SPC_get_photon(acq->streamHandle, &phot_info);
 			// save it somewhere
 
-
-
 			if (phot_info.flags == L_MARK) {
 				lineCount++;
 				unsigned int diff = phot_info.mtime_lo - prevvalueLineMacro;
@@ -1553,13 +1149,11 @@ int BH_extractPhoton(void *param) {
 
 	}
 
+	OSc_Error err;
+	if (OSc_Check_Error(err, BH_LTDataSave(acq)))
+		return err;
 
-	if (BH_LTDataSave(acq))
-		return 0;
-	else
-		return -1;
-
-	
+	return OSc_Error_OK;
 
 }
 
@@ -1598,7 +1192,6 @@ unsigned short compute_checksum(void* hdr) {
 
 static OSc_Error BH_StartDetector(OSc_Device *device, OSc_Acquisition *acq)
 {
-
 	struct AcqPrivateData *privAcq = &(GetData(device)->acquisition);
 	short moduleNr = GetData(device)->moduleNr;
 	short state;
@@ -1606,36 +1199,12 @@ static OSc_Error BH_StartDetector(OSc_Device *device, OSc_Acquisition *acq)
 	DWORD id;
 	privAcq->thread = CreateThread(NULL, 0, BH_FIFO_Loop, device, 0, &id);
 
-
-	//if (!(state&SPC_ARMED)) {
-	//	///BH_FIFO_Loop(device);
-	//
-	//	
-	//		//privAcq->thread = CreateThread(NULL, 0, BH_FIFO_Loop, device, 0, &id);
-	//		
-	//}
-
-	//else {
-	//	//privAcq->readoutThread = CreateThread(NULL, 0, BH_FIFO_Loop, device, 0, &id);
-	//}
-
-
-
-	//privAcq->thread = CreateThread(NULL, 0, AcquireExtractLoop, device, 0, &id);
-	//AcquireExtractLoop(device);
-	//privAcq->thread = CreateThread(NULL, 0, AcquisitionLoop, device, 0, &id);
-	//privAcq->readoutThread = CreateThread(NULL, 0, ReadoutLoop, device, 0, &id);
-
-	
-
 	//test insert
 	EnterCriticalSection(&(privAcq->mutex));
 	privAcq->isRunning = true;
 	privAcq->stopRequested = false;
 	LeaveCriticalSection(&(privAcq->mutex));
 	WakeAllConditionVariable(&(privAcq->acquisitionFinishCondition));
-
-
 
 	return OSc_Error_Unsupported_Operation;
 }

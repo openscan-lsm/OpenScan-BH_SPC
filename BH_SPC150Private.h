@@ -65,6 +65,7 @@ struct AcqPrivateData
 	size_t width;
 	size_t height;
 	uint64_t pixelTime;
+	double cfd_value;
 
 	CRITICAL_SECTION mutex;
 	CONDITION_VARIABLE acquisitionFinishCondition;
@@ -101,6 +102,7 @@ struct BH_PrivateData
 	bool settingsChanged;
 
 	bool flimStarted;   // actual FLIM acquitiion starts when True
+	bool flimDone;
 	uint32_t acqTime; //seconds
 
 	struct AcqPrivateData acquisition;

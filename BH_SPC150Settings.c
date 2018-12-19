@@ -40,6 +40,26 @@ static struct OSc_Setting_Impl SettingImpl_FLIMStarted = {
 };
 
 
+static OSc_Error GetFLIMFinished(OSc_Setting *setting, bool *value)
+{
+	*value = GetData(setting->device)->flimDone;
+	return OSc_Error_OK;
+}
+
+
+static OSc_Error SetFLIMFinished(OSc_Setting *setting, bool value)
+{
+	GetData(setting->device)->flimDone = value;
+	return OSc_Error_OK;
+}
+
+
+static struct OSc_Setting_Impl SettingImpl_FLIMFinished = {
+	.GetBool = GetFLIMFinished,
+	.SetBool = SetFLIMFinished,
+};
+
+
 static OSc_Error GetAcqTime(OSc_Setting *setting, int32_t *value)
 {
 	*value = GetData(setting->device)->acqTime;
@@ -84,14 +104,17 @@ OSc_Error BH_SPC150PrepareSettings(OSc_Device *device)
 	OSc_Return_If_Error(OSc_Setting_Create(&flimStarted, device, "BH-StartFLIM", OSc_Value_Type_Bool,
 		&SettingImpl_FLIMStarted, NULL));
 
-
+	OSc_Setting *flimFinished;
+	OSc_Return_If_Error(OSc_Setting_Create(&flimFinished, device, "BH-FLIMFinished", OSc_Value_Type_Bool,
+		&SettingImpl_FLIMFinished, NULL));
+	
 	OSc_Setting *acqTime;
 	OSc_Return_If_Error(OSc_Setting_Create(&acqTime, device, "BH_AcqTime", OSc_Value_Type_Int32,
 		&SettingImpl_BHAcqTime, NULL));
 
 
 	OSc_Setting *ss[] = {
-		fileName, flimStarted, acqTime,
+		fileName, flimStarted, flimFinished, acqTime,
 	};  // OSc_Device_Get_Settings() returns count = 1 when this has NULL inside
 	size_t nSettings = sizeof(ss) / sizeof(OSc_Setting *);
 	if (*ss == NULL)
