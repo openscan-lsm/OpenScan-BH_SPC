@@ -28,8 +28,10 @@ static void PopulateDefaultParameters(struct BH_PrivateData *data)
 	data->acqTime = 20;
 	data->flimStarted = false;
 	data->flimDone = false;
-	data->acquisition.cfd_value = 1.0;
-
+	data->acquisition.cfd_value = 1.1;
+	data->acquisition.sync_value = 2.1;
+	data->acquisition.adc_value = 3.1;
+	data->acquisition.tac_value = 4.1;
 	strcpy(data->flimFileName, "default-BH-FLIM-data");
 
 	//// TODO
@@ -282,7 +284,10 @@ static DWORD WINAPI BH_Monitor_Loop(void *param)
 	
 	while (!acq->stopRequested)
 	{
-		acq->cfd_value = 12345;  // TODO: read from SPC150 board
+		acq->cfd_value = 10001;  // TODO: read from SPC150 board
+		acq->sync_value = 10002;
+		acq->adc_value = 10003;
+		acq->tac_value = 10004;
 		Sleep(100);
 	}
 

@@ -66,6 +66,9 @@ struct AcqPrivateData
 	size_t height;
 	uint64_t pixelTime;
 	double cfd_value;
+	double sync_value;
+	double adc_value;
+	double tac_value;
 
 	CRITICAL_SECTION mutex;
 	CONDITION_VARIABLE acquisitionFinishCondition;

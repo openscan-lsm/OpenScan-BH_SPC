@@ -100,7 +100,7 @@ static OSc_Error GetCFD(OSc_Setting *setting, double *value)
 
 static OSc_Error SetCFD(OSc_Setting *setting, double value)
 {
-	// CFD should be read only
+	// read only
 	return OSc_Error_OK;
 }
 
@@ -121,6 +121,94 @@ static struct OSc_Setting_Impl SettingImpl_CFD = {
 };
 
 
+static OSc_Error GetSyncValue(OSc_Setting *setting, double *value)
+{
+	*value = GetData(setting->device)->acquisition.sync_value;
+	return OSc_Error_OK;
+}
+
+
+static OSc_Error SetSyncValue(OSc_Setting *setting, double value)
+{
+	// read only
+	return OSc_Error_OK;
+}
+
+
+static OSc_Error GetSyncValueRange(OSc_Setting *setting, double *min, double *max)
+{
+	*min = 1.0;
+	*max = 1e8;
+	return OSc_Error_OK;
+}
+
+
+static struct OSc_Setting_Impl SettingImpl_Sync = {
+	.GetFloat64 = GetSyncValue,
+	.SetFloat64 = SetSyncValue,
+	.GetNumericConstraintType = OSc_Setting_NumericConstraintRange,
+	.GetFloat64Range = GetSyncValueRange,
+};
+
+
+static OSc_Error GetADC(OSc_Setting *setting, double *value)
+{
+	*value = GetData(setting->device)->acquisition.adc_value;
+	return OSc_Error_OK;
+}
+
+
+static OSc_Error SetADC(OSc_Setting *setting, double value)
+{
+	// read only
+	return OSc_Error_OK;
+}
+
+
+static OSc_Error GetADCRange(OSc_Setting *setting, double *min, double *max)
+{
+	*min = 1.0;
+	*max = 1e8;
+	return OSc_Error_OK;
+}
+
+
+static struct OSc_Setting_Impl SettingImpl_ADC = {
+	.GetFloat64 = GetADC,
+	.SetFloat64 = SetADC,
+	.GetNumericConstraintType = OSc_Setting_NumericConstraintRange,
+	.GetFloat64Range = GetADCRange,
+};
+
+
+static OSc_Error GetTAC(OSc_Setting *setting, double *value)
+{
+	*value = GetData(setting->device)->acquisition.tac_value;
+	return OSc_Error_OK;
+}
+
+
+static OSc_Error SetTAC(OSc_Setting *setting, double value)
+{
+	// read only
+	return OSc_Error_OK;
+}
+
+
+static OSc_Error GetTACRange(OSc_Setting *setting, double *min, double *max)
+{
+	*min = 1.0;
+	*max = 1e8;
+	return OSc_Error_OK;
+}
+
+
+static struct OSc_Setting_Impl SettingImpl_TAC = {
+	.GetFloat64 = GetTAC,
+	.SetFloat64 = SetTAC,
+	.GetNumericConstraintType = OSc_Setting_NumericConstraintRange,
+	.GetFloat64Range = GetTACRange,
+};
 
 OSc_Error BH_SPC150PrepareSettings(OSc_Device *device)
 {
@@ -147,9 +235,23 @@ OSc_Error BH_SPC150PrepareSettings(OSc_Device *device)
 	OSc_Return_If_Error(OSc_Setting_Create(&cfd_value, device, "BH_CFD", OSc_Value_Type_Float64,
 		&SettingImpl_CFD, NULL));
 
+	OSc_Setting *sync_value;
+	OSc_Return_If_Error(OSc_Setting_Create(&sync_value, device, "BH_Sync", OSc_Value_Type_Float64,
+		&SettingImpl_Sync, NULL));
+
+	OSc_Setting *adc_value;
+	OSc_Return_If_Error(OSc_Setting_Create(&adc_value, device, "BH_ADC", OSc_Value_Type_Float64,
+		&SettingImpl_ADC, NULL));
+
+
+	OSc_Setting *tac_value;
+	OSc_Return_If_Error(OSc_Setting_Create(&tac_value, device, "BH_TAC", OSc_Value_Type_Float64,
+		&SettingImpl_TAC, NULL));
+
 
 	OSc_Setting *ss[] = {
-		fileName, flimStarted, flimFinished, acqTime, cfd_value,
+		fileName, flimStarted, flimFinished, acqTime, 
+		cfd_value, sync_value, adc_value, tac_value,
 	};  // OSc_Device_Get_Settings() returns count = 1 when this has NULL inside
 	size_t nSettings = sizeof(ss) / sizeof(OSc_Setting *);
 	if (*ss == NULL)
