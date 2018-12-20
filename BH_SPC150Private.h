@@ -73,6 +73,7 @@ struct AcqPrivateData
 	bool isRunning;
 	HANDLE thread;
 	HANDLE readoutThread;
+	HANDLE monitorThread;
 	short streamHandle;
 
 	bool wroteHeader;

@@ -91,6 +91,37 @@ static struct OSc_Setting_Impl SettingImpl_BHAcqTime = {
 };
 
 
+static OSc_Error GetCFD(OSc_Setting *setting, double *value)
+{
+	*value = GetData(setting->device)->acquisition.cfd_value;
+	return OSc_Error_OK;
+}
+
+
+static OSc_Error SetCFD(OSc_Setting *setting, double value)
+{
+	// CFD should be read only
+	return OSc_Error_OK;
+}
+
+
+static OSc_Error GetCFDRange(OSc_Setting *setting, double *min, double *max)
+{
+	*min = 1.0;
+	*max = 1e8;
+	return OSc_Error_OK;
+}
+
+
+static struct OSc_Setting_Impl SettingImpl_CFD = {
+	.GetFloat64 = GetCFD,
+	.SetFloat64 = SetCFD,
+	.GetNumericConstraintType = OSc_Setting_NumericConstraintRange,
+	.GetFloat64Range = GetCFDRange,
+};
+
+
+
 OSc_Error BH_SPC150PrepareSettings(OSc_Device *device)
 {
 	if (GetData(device)->settings)
@@ -112,9 +143,13 @@ OSc_Error BH_SPC150PrepareSettings(OSc_Device *device)
 	OSc_Return_If_Error(OSc_Setting_Create(&acqTime, device, "BH_AcqTime", OSc_Value_Type_Int32,
 		&SettingImpl_BHAcqTime, NULL));
 
+	OSc_Setting *cfd_value;
+	OSc_Return_If_Error(OSc_Setting_Create(&cfd_value, device, "BH_CFD", OSc_Value_Type_Float64,
+		&SettingImpl_CFD, NULL));
+
 
 	OSc_Setting *ss[] = {
-		fileName, flimStarted, flimFinished, acqTime,
+		fileName, flimStarted, flimFinished, acqTime, cfd_value,
 	};  // OSc_Device_Get_Settings() returns count = 1 when this has NULL inside
 	size_t nSettings = sizeof(ss) / sizeof(OSc_Setting *);
 	if (*ss == NULL)

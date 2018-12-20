@@ -28,6 +28,7 @@ static void PopulateDefaultParameters(struct BH_PrivateData *data)
 	data->acqTime = 20;
 	data->flimStarted = false;
 	data->flimDone = false;
+	data->acquisition.cfd_value = 1.0;
 
 	strcpy(data->flimFileName, "default-BH-FLIM-data");
 
@@ -268,6 +269,24 @@ static OSc_Error BH_GetBytesPerSample(OSc_Device *device, uint32_t *bytesPerSamp
 {
 	*bytesPerSample = 2;
 	return OSc_Error_OK;
+}
+
+
+// monitoring critical FLIM parameters
+// such as CFD, Sync, etc.
+// supposed to be running all the time
+static DWORD WINAPI BH_Monitor_Loop(void *param)
+{
+	OSc_Device *device = (OSc_Device *)param;
+	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
+	
+	while (!acq->stopRequested)
+	{
+		acq->cfd_value = 12345;  // TODO: read from SPC150 board
+		Sleep(100);
+	}
+
+	return 0;
 }
 
 
@@ -1181,6 +1200,7 @@ static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 	return OSc_Error_OK;
 }
 
+
 unsigned short compute_checksum(void* hdr) {
 
 	unsigned short* ptr;
@@ -1194,16 +1214,20 @@ unsigned short compute_checksum(void* hdr) {
 	return (-chksum + BH_HEADER_CHKSUM);
 }
 
+
 static OSc_Error BH_StartDetector(OSc_Device *device, OSc_Acquisition *acq)
 {
 	struct AcqPrivateData *privAcq = &(GetData(device)->acquisition);
 	short moduleNr = GetData(device)->moduleNr;
 	short state;
 	SPC_test_state(moduleNr, &state);
-	// TODO:
-	// read SPC150 parameters such as CFD, Sync, etc in a separate thread
-	
+
 	DWORD id;
+
+	// read SPC150 parameters such as CFD, Sync, etc in a separate thread
+	privAcq->monitorThread = CreateThread(NULL, 0, BH_Monitor_Loop, device, 0, &id);
+	
+	// FLIm acquisition thread
 	privAcq->thread = CreateThread(NULL, 0, BH_FIFO_Loop, device, 0, &id);
 
 	//test insert
