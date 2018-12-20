@@ -437,6 +437,10 @@ static DWORD WINAPI BH_FIFO_Loop(void *param)
 	SPC_get_parameters(0, &parameterCheck);
 	//snprintf(msg, OSc_MAX_STR_LEN, "Updated magnification is: %6.2f", *magnification);
 
+	// do not start FLIM acquisition until user click 'StartFLIM'
+	while (!GetData(device)->flimStarted)
+		Sleep(100);
+
 	spcRet = SPC_start_measurement(GetData(device)->moduleNr);
 	char msg[OSc_MAX_STR_LEN + 1];
 	snprintf(msg, OSc_MAX_STR_LEN, "return value after start measurement %d", spcRet);
@@ -1196,6 +1200,9 @@ static OSc_Error BH_StartDetector(OSc_Device *device, OSc_Acquisition *acq)
 	short moduleNr = GetData(device)->moduleNr;
 	short state;
 	SPC_test_state(moduleNr, &state);
+	// TODO:
+	// read SPC150 parameters such as CFD, Sync, etc in a separate thread
+	
 	DWORD id;
 	privAcq->thread = CreateThread(NULL, 0, BH_FIFO_Loop, device, 0, &id);
 
