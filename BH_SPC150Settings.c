@@ -60,6 +60,26 @@ static struct OSc_Setting_Impl SettingImpl_FLIMFinished = {
 };
 
 
+static OSc_Error GetMonitoringFLIM(OSc_Setting *setting, bool *value)
+{
+	*value = GetData(setting->device)->monitoringFLIM;
+	return OSc_Error_OK;
+}
+
+
+static OSc_Error SetMonitoringFLIM(OSc_Setting *setting, bool value)
+{
+	GetData(setting->device)->monitoringFLIM = value;
+	return OSc_Error_OK;
+}
+
+
+static struct OSc_Setting_Impl SettingImpl_MonitoringFLIM = {
+	.GetBool = GetMonitoringFLIM,
+	.SetBool = SetMonitoringFLIM,
+};
+
+
 static OSc_Error GetAcqTime(OSc_Setting *setting, int32_t *value)
 {
 	*value = GetData(setting->device)->acqTime;
@@ -227,6 +247,10 @@ OSc_Error BH_SPC150PrepareSettings(OSc_Device *device)
 	OSc_Return_If_Error(OSc_Setting_Create(&flimFinished, device, "BH-FLIMFinished", OSc_Value_Type_Bool,
 		&SettingImpl_FLIMFinished, NULL));
 	
+	OSc_Setting *monitoringFLIM;
+	OSc_Return_If_Error(OSc_Setting_Create(&monitoringFLIM, device, "BH-MonitoringFLIM", OSc_Value_Type_Bool,
+		&SettingImpl_MonitoringFLIM, NULL));
+
 	OSc_Setting *acqTime;
 	OSc_Return_If_Error(OSc_Setting_Create(&acqTime, device, "BH_AcqTime", OSc_Value_Type_Int32,
 		&SettingImpl_BHAcqTime, NULL));
@@ -250,7 +274,7 @@ OSc_Error BH_SPC150PrepareSettings(OSc_Device *device)
 
 
 	OSc_Setting *ss[] = {
-		fileName, flimStarted, flimFinished, acqTime, 
+		fileName, flimStarted, flimFinished, monitoringFLIM, acqTime,
 		cfd_value, sync_value, adc_value, tac_value,
 	};  // OSc_Device_Get_Settings() returns count = 1 when this has NULL inside
 	size_t nSettings = sizeof(ss) / sizeof(OSc_Setting *);

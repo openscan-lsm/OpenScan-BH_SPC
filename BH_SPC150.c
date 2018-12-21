@@ -22,12 +22,53 @@ struct ReadoutState
 };
 
 
+// monitoring critical FLIM parameters
+// such as CFD, Sync, etc.
+// supposed to be running all the time
+static DWORD WINAPI BH_Monitor_Loop(void *param)
+{
+	OSc_Device *device = (OSc_Device *)param;
+	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
+	rate_values m_rates;
+	short act_mod = 0;
+
+	OSc_Log_Debug(device, "FLIM monitoring thread starting...");
+	bool stopRequested = false;
+	while (true)
+	{
+		EnterCriticalSection(&(acq->mutex));
+		// only exit the monitor thread when user set monitoringFLIM to OFF
+		// and Stop Live (or Exit program) is clicked.
+		stopRequested = !(GetData(device)->monitoringFLIM) && acq->stopRequested;
+		LeaveCriticalSection(&(acq->mutex));
+		if (stopRequested)
+		{
+			OSc_Log_Debug(device, "User interruption...Exiting FLIM monitor loop");
+			GetData(device)->flimStarted = false;  // reset for next run
+			break;
+		}
+
+		if (SPC_read_rates(act_mod, &m_rates) == 0) {
+			acq->cfd_value = m_rates.cfd_rate;
+			acq->sync_value = m_rates.sync_rate;
+			acq->adc_value = m_rates.adc_rate;
+			acq->tac_value = m_rates.tac_rate;
+		}
+		Sleep(100);
+	}
+
+	BH_FinishAcquisition(device);
+	return 0;
+}
+
+
 static void PopulateDefaultParameters(struct BH_PrivateData *data)
 {
 	data->settingsChanged = true;
 	data->acqTime = 20;
 	data->flimStarted = false;
 	data->flimDone = false;
+	data->monitoringFLIM = true;
 	data->acquisition.cfd_value = 1.1;
 	data->acquisition.sync_value = 2.1;
 	data->acquisition.adc_value = 3.1;
@@ -110,6 +151,13 @@ static OSc_Error EnumerateInstances(OSc_Device ***devices, size_t *count)
 	}
 
 	PopulateDefaultParameters(GetData(device));
+
+	// read SPC150 parameters such as CFD, Sync, etc in a separate thread
+	// TODO: the issue starting monitor loop here is that if Stop Live is clicked
+	// i.e. stopRequested = true, the thread will exit and there is no way to restart it
+
+	DWORD id;
+	GetData(device)->acquisition.monitorThread = CreateThread(NULL, 0, BH_Monitor_Loop, device, 0, &id);
 
 	*devices = malloc(sizeof(OSc_Device *));
 	*count = 1;
@@ -270,43 +318,6 @@ static OSc_Error BH_GetBytesPerSample(OSc_Device *device, uint32_t *bytesPerSamp
 {
 	*bytesPerSample = 2;
 	return OSc_Error_OK;
-}
-
-
-// monitoring critical FLIM parameters
-// such as CFD, Sync, etc.
-// supposed to be running all the time
-static DWORD WINAPI BH_Monitor_Loop(void *param)
-{
-	OSc_Device *device = (OSc_Device *)param;
-	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
-	rate_values m_rates;
-	short act_mod = 0;
-
-	bool stopRequested = false;
-	while (true)
-	{
-		EnterCriticalSection(&(acq->mutex));
-		stopRequested = acq->stopRequested;
-		LeaveCriticalSection(&(acq->mutex));
-		if (stopRequested)
-		{
-			OSc_Log_Debug(device, "User interruption...Exiting FLIM monitor loop");
-			GetData(device)->flimStarted = false;  // reset for next run
-			break;
-		}
-
-		if (SPC_read_rates(act_mod, &m_rates) == 0) {
-			acq->cfd_value = m_rates.cfd_rate;
-			acq->sync_value = m_rates.sync_rate;
-			acq->adc_value = m_rates.adc_rate;
-			acq->tac_value = m_rates.tac_rate;
-			Sleep(100);
-		}
-	}
-
-	BH_FinishAcquisition(device);
-	return 0;
 }
 
 
@@ -657,6 +668,7 @@ static void BH_FinishAcquisition(OSc_Device *device)
 	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
 	EnterCriticalSection(&(acq->mutex));
 	acq->isRunning = false;
+	GetData(device)->flimStarted = false; // reset for next run
 	LeaveCriticalSection(&(acq->mutex));
 	CONDITION_VARIABLE *cv = &(acq->acquisitionFinishCondition);
 	WakeAllConditionVariable(cv);
@@ -1304,10 +1316,6 @@ static OSc_Error BH_StartDetector(OSc_Device *device, OSc_Acquisition *acq)
 	SPC_test_state(moduleNr, &state);
 
 	DWORD id;
-
-	// read SPC150 parameters such as CFD, Sync, etc in a separate thread
-	privAcq->monitorThread = CreateThread(NULL, 0, BH_Monitor_Loop, device, 0, &id);
-	
 	// FLIm acquisition thread
 	privAcq->thread = CreateThread(NULL, 0, BH_FIFO_Loop, device, 0, &id);
 

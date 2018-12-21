@@ -108,6 +108,7 @@ struct BH_PrivateData
 
 	bool flimStarted;   // actual FLIM acquitiion starts when True
 	bool flimDone;
+	bool monitoringFLIM;  // set to true by default to monitor FLIM parameters since the beginning
 	uint32_t acqTime; //seconds
 
 	struct AcqPrivateData acquisition;
