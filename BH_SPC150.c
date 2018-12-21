@@ -34,15 +34,15 @@ static void PopulateDefaultParameters(struct BH_PrivateData *data)
 	data->acquisition.tac_value = 4.1;
 	strcpy(data->flimFileName, "default-BH-FLIM-data");
 
-	//// TODO
-	//InitializeCriticalSection(&(data->acquisition.mutex));
-	//data->acquisition.thread = NULL;
-	//InitializeConditionVariable(&(data->acquisition.acquisitionFinishCondition));
-	//data->acquisition.running = false;
-	//data->acquisition.armed = false;
-	//data->acquisition.started = false;
-	//data->acquisition.stopRequested = false;
-	//data->acquisition.acquisition = NULL;
+	InitializeCriticalSection(&(data->acquisition.mutex));
+	InitializeConditionVariable(&(data->acquisition.acquisitionFinishCondition));
+	data->acquisition.thread = NULL;
+	data->acquisition.monitorThread = NULL;
+	data->acquisition.streamHandle = 0;
+	data->acquisition.isRunning = false;
+	data->acquisition.started = false;
+	data->acquisition.stopRequested = false;
+	data->acquisition.acquisition = NULL;
 }
 
 
@@ -99,8 +99,6 @@ static OSc_Error EnumerateInstances(OSc_Device ***devices, size_t *count)
 
 	struct BH_PrivateData *data = calloc(1, sizeof(struct BH_PrivateData));
 	data->moduleNr = 0; // TODO for multiple modules
-	InitializeCriticalSection(&(data->acquisition.mutex));
-	InitializeConditionVariable(&(data->acquisition.acquisitionFinishCondition));
 
 	OSc_Device *device;
 	OSc_Error err;
@@ -177,6 +175,7 @@ static OSc_Error BH_Close(OSc_Device *device)
 	struct AcqPrivateData *acq = &GetData(device)->acquisition;
 	EnterCriticalSection(&acq->mutex);
 	acq->stopRequested = true;
+	GetData(device)->flimStarted = false; // reset for next run
 	while (acq->isRunning)
 		SleepConditionVariableCS(&acq->acquisitionFinishCondition, &acq->mutex, INFINITE);
 	LeaveCriticalSection(&acq->mutex);
@@ -281,16 +280,32 @@ static DWORD WINAPI BH_Monitor_Loop(void *param)
 {
 	OSc_Device *device = (OSc_Device *)param;
 	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
-	
-	while (!acq->stopRequested)
+	rate_values m_rates;
+	short act_mod = 0;
+
+	bool stopRequested = false;
+	while (true)
 	{
-		acq->cfd_value = 10001;  // TODO: read from SPC150 board
-		acq->sync_value = 10002;
-		acq->adc_value = 10003;
-		acq->tac_value = 10004;
-		Sleep(100);
+		EnterCriticalSection(&(acq->mutex));
+		stopRequested = acq->stopRequested;
+		LeaveCriticalSection(&(acq->mutex));
+		if (stopRequested)
+		{
+			OSc_Log_Debug(device, "User interruption...Exiting FLIM monitor loop");
+			GetData(device)->flimStarted = false;  // reset for next run
+			break;
+		}
+
+		if (SPC_read_rates(act_mod, &m_rates) == 0) {
+			acq->cfd_value = m_rates.cfd_rate;
+			acq->sync_value = m_rates.sync_rate;
+			acq->adc_value = m_rates.adc_rate;
+			acq->tac_value = m_rates.tac_rate;
+			Sleep(100);
+		}
 	}
 
+	BH_FinishAcquisition(device);
 	return 0;
 }
 
@@ -307,7 +322,7 @@ static DWORD WINAPI BH_FIFO_Loop(void *param)
 	OSc_Return_If_Error(set_measurement_params());
 
 	acq->firstWrite = 1;
-	OSc_Log_Debug(device, "Started FLIM");
+	OSc_Log_Debug(device, "Waiting for user to start FLIM acquisition...");
 
 	//adapted from init_fifo_measurement
 
@@ -461,20 +476,55 @@ static DWORD WINAPI BH_FIFO_Loop(void *param)
 	SPC_get_parameters(0, &parameterCheck);
 	//snprintf(msg, OSc_MAX_STR_LEN, "Updated magnification is: %6.2f", *magnification);
 
+	bool stopRequested;  // allow user to stop acquisition
 	// do not start FLIM acquisition until user click 'StartFLIM'
-	while (!GetData(device)->flimStarted)
+	while (true)
+	{
+		EnterCriticalSection(&(acq->mutex));
+		{	
+			stopRequested = acq->stopRequested;
+			acq->started = GetData(device)->flimStarted;
+		}
+		LeaveCriticalSection(&(acq->mutex));
+		if (acq->started)
+		{
+			OSc_Log_Debug(device, "user started FLIM acquisition");
+			break;
+		}
+		if (stopRequested)
+		{
+			GetData(device)->flimStarted = false;  // reset to false for next run
+			OSc_Log_Debug(device, "User interruption...");
+			break;
+		}
 		Sleep(100);
-
+	}
+	
+	// TODO: not sure if the loop should directly exit here if stop is reuqested?
 	spcRet = SPC_start_measurement(GetData(device)->moduleNr);
 	char msg[OSc_MAX_STR_LEN + 1];
 	snprintf(msg, OSc_MAX_STR_LEN, "return value after start measurement %d", spcRet);
-
 	OSc_Log_Debug(device, msg);
 
 	// keep acquiring photon data until the set acquisition time is over
 	GetData(device)->flimDone = false; 
-	while (!spcRet) {
-		loopcount++;
+	while (!spcRet) 
+	{
+		EnterCriticalSection(&(acq->mutex));
+		stopRequested = acq->stopRequested;
+		LeaveCriticalSection(&(acq->mutex));
+		if (stopRequested)
+		{
+			OSc_Log_Debug(device, "User interruption...Exiting FLIM acquisition loop...");
+			GetData(device)->flimStarted = false;  // reset for next run
+			break;
+		}
+
+		loopcount++;  // debug use only
+		//char msg[OSc_MAX_STR_LEN + 1];
+		//snprintf(msg, OSc_MAX_STR_LEN, "Current FLIM loop: %d", loopcount);
+		//OSc_Log_Debug(device, msg);
+
 		// now test SPC state and read photons
 		SPC_test_state(act_mod, &state);
 		// user must provide safety way out from this loop 
@@ -594,18 +644,23 @@ static DWORD WINAPI BH_FIFO_Loop(void *param)
 	if (OSc_Check_Error(err, BH_LTDataSave(device)))
 	{
 		OSc_Log_Error(device, "Error writing SDT file");
+		BH_FinishAcquisition(device);
 		return 0;
 	}
 
-	EnterCriticalSection(&(acq->mutex));
-	acq->isRunning = false;
-	acq->stopRequested = true;
-	LeaveCriticalSection(&(acq->mutex));
-	WakeAllConditionVariable(&(acq->acquisitionFinishCondition));
-
+	BH_FinishAcquisition(device);
 	return 0;
 }
 
+static void BH_FinishAcquisition(OSc_Device *device)
+{
+	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
+	EnterCriticalSection(&(acq->mutex));
+	acq->isRunning = false;
+	LeaveCriticalSection(&(acq->mutex));
+	CONDITION_VARIABLE *cv = &(acq->acquisitionFinishCondition);
+	WakeAllConditionVariable(cv);
+}
 
 OSc_Error set_measurement_params() {
 	/*
@@ -1195,10 +1250,14 @@ static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 		if (privAcq->isRunning)
 		{
 			LeaveCriticalSection(&(privAcq->mutex));
-			return OSc_Error_Acquisition_Running;
+			if (privAcq->started)
+				return OSc_Error_Acquisition_Running;
+			else
+				return OSc_Error_OK;
 		}
 		privAcq->stopRequested = false;
 		privAcq->isRunning = true;
+		privAcq->started = false;
 	}
 	LeaveCriticalSection(&(privAcq->mutex));
 
@@ -1223,6 +1282,23 @@ unsigned short compute_checksum(void* hdr) {
 static OSc_Error BH_StartDetector(OSc_Device *device, OSc_Acquisition *acq)
 {
 	struct AcqPrivateData *privAcq = &(GetData(device)->acquisition);
+
+	EnterCriticalSection(&(privAcq->mutex));
+	{
+		if (!(privAcq->isRunning))
+		{
+			LeaveCriticalSection(&(privAcq->mutex));
+			return OSc_Error_Not_Armed;
+		}
+		if (privAcq->started)
+		{
+			LeaveCriticalSection(&(privAcq->mutex));
+			return OSc_Error_Acquisition_Running;
+		}
+		privAcq->started = GetData(device)->flimStarted;  // only true if user set flimStarted to True
+	}
+	LeaveCriticalSection(&(privAcq->mutex));
+
 	short moduleNr = GetData(device)->moduleNr;
 	short state;
 	SPC_test_state(moduleNr, &state);
@@ -1235,23 +1311,47 @@ static OSc_Error BH_StartDetector(OSc_Device *device, OSc_Acquisition *acq)
 	// FLIm acquisition thread
 	privAcq->thread = CreateThread(NULL, 0, BH_FIFO_Loop, device, 0, &id);
 
-	//test insert
-	EnterCriticalSection(&(privAcq->mutex));
-	privAcq->isRunning = true;
-	privAcq->stopRequested = false;
-	LeaveCriticalSection(&(privAcq->mutex));
-	WakeAllConditionVariable(&(privAcq->acquisitionFinishCondition));
+	return OSc_Error_OK;
 
-	return OSc_Error_Unsupported_Operation;
+	//test insert
+	//EnterCriticalSection(&(privAcq->mutex));
+	//privAcq->isRunning = true;
+	//privAcq->stopRequested = false;
+	//LeaveCriticalSection(&(privAcq->mutex));
+	//WakeAllConditionVariable(&(privAcq->acquisitionFinishCondition));
+
+	//return OSc_Error_Unsupported_Operation;
 }
 
 
 static OSc_Error BH_StopDetector(OSc_Device *device, OSc_Acquisition *acq)
 {
 	EnterCriticalSection(&(GetData(device)->acquisition.mutex));
-	GetData(device)->acquisition.stopRequested = true;
+	{
+		if (!GetData(device)->acquisition.isRunning)
+		{
+			LeaveCriticalSection(&(GetData(device)->acquisition.mutex));
+			return OSc_Error_OK;
+		}
+		GetData(device)->acquisition.stopRequested = true;
+	}
 	LeaveCriticalSection(&(GetData(device)->acquisition.mutex));
-	return OSc_Error_OK;
+	return BH_WaitForAcquisitionToFinish(device);
+}
+
+
+static OSc_Error BH_WaitForAcquisitionToFinish(OSc_Device *device)
+{
+	OSc_Error err = OSc_Error_OK;
+	CONDITION_VARIABLE *cv = &(GetData(device)->acquisition.acquisitionFinishCondition);
+
+	EnterCriticalSection(&(GetData(device)->acquisition.mutex));
+	while (GetData(device)->acquisition.isRunning)
+	{
+		SleepConditionVariableCS(cv, &(GetData(device)->acquisition.mutex), INFINITE);
+	}
+	LeaveCriticalSection(&(GetData(device)->acquisition.mutex));
+	return err;
 }
 
 
@@ -1266,14 +1366,7 @@ static OSc_Error BH_IsRunning(OSc_Device *device, bool *isRunning)
 
 static OSc_Error BH_Wait(OSc_Device *device)
 {
-	struct AcqPrivateData *acq = &GetData(device)->acquisition;
-	OSc_Error err = OSc_Error_OK;
-
-	EnterCriticalSection(&acq->mutex);
-	while (acq->isRunning)
-		SleepConditionVariableCS(&acq->acquisitionFinishCondition, &acq->mutex, INFINITE);
-	LeaveCriticalSection(&acq->mutex);
-	return err;
+	return BH_WaitForAcquisitionToFinish(device);
 }
 
 

@@ -73,7 +73,8 @@ struct AcqPrivateData
 	CRITICAL_SECTION mutex;
 	CONDITION_VARIABLE acquisitionFinishCondition;
 	bool stopRequested;
-	bool isRunning;
+	bool isRunning;  // true if FLIM detector is armed
+	bool started;    // true only if user starts FLIM acquisition
 	HANDLE thread;
 	HANDLE readoutThread;
 	HANDLE monitorThread;
