@@ -96,7 +96,7 @@ static OSc_Error EnumerateInstances(OSc_Device ***devices, size_t *count)
 	//short status=SPC_get_init_status();
 	int  a = 0;
 	//spcErr = SPC_close();  // close SPC150 if it remains open from previous session
-	spcErr = SPC_init("cspcm.ini");
+	spcErr = SPC_init("sspcm.ini");
 	if (spcErr < 0)
 	{
 		char msg[OSc_MAX_STR_LEN + 1] = "Cannot initialize BH SPC150 using: ";
