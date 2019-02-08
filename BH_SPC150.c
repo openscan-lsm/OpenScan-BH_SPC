@@ -5,8 +5,10 @@
 #pragma once
 #pragma pack(1)
 
+static bool g_BH_initialized = false;
 static OSc_Device **g_devices;
 static size_t g_deviceCount;
+static size_t g_openDeviceCount = 0;
 
 
 struct ReadoutState
@@ -87,8 +89,11 @@ static void PopulateDefaultParameters(struct BH_PrivateData *data)
 }
 
 
-static OSc_Error EnumerateInstances(OSc_Device ***devices, size_t *count)
+static OSc_Error EnsureFLIMBoardInitialized(void)
 {
+	if (g_BH_initialized)
+		return OSc_Error_OK;
+
 	short spcErr;
 	short spcRet;
 	int active_board[1];
@@ -108,7 +113,7 @@ static OSc_Error EnumerateInstances(OSc_Device ***devices, size_t *count)
 	spcRet = SPC_get_module_info(MODULE, (SPCModInfo *)&m_ModInfo);
 	if (spcRet != 0) {
 		SPC_get_error_string(spcRet, spcErr, 100);
-		
+
 	}
 
 	int isBoardActive = 0;
@@ -136,6 +141,32 @@ static OSc_Error EnumerateInstances(OSc_Device ***devices, size_t *count)
 			isBoardActive = 0;
 		}
 	}
+	g_BH_initialized = true;
+	return OSc_Error_OK;
+}
+
+
+static OSc_Error DeinitializeFLIMBoard(void)
+{
+	if (!g_BH_initialized)
+		return OSc_Error_OK;
+	
+	// TODO - close the FLIM board
+
+	g_BH_initialized = false;
+	return OSc_Error_OK;
+}
+
+
+static OSc_Error EnumerateInstances(OSc_Device ***devices, size_t *count)
+{
+	// TODO
+	// check if the FLIM board is available in the system
+	// then deinitialize it so that other FLIM software like SPCm can use it
+	// when it is not used in OpenScan
+	//OSc_Return_If_Error(EnsureFLIMBoardInitialized());
+	//OSc_Return_If_Error(DeinitializeFLIMBoard());
+
 	// For now, support just one board
 
 	struct BH_PrivateData *data = calloc(1, sizeof(struct BH_PrivateData));
@@ -151,13 +182,6 @@ static OSc_Error EnumerateInstances(OSc_Device ***devices, size_t *count)
 	}
 
 	PopulateDefaultParameters(GetData(device));
-
-	// read SPC150 parameters such as CFD, Sync, etc in a separate thread
-	// TODO: the issue starting monitor loop here is that if Stop Live is clicked
-	// i.e. stopRequested = true, the thread will exit and there is no way to restart it
-
-	DWORD id;
-	GetData(device)->acquisition.monitorThread = CreateThread(NULL, 0, BH_Monitor_Loop, device, 0, &id);
 
 	*devices = malloc(sizeof(OSc_Device *));
 	*count = 1;
@@ -199,6 +223,8 @@ static OSc_Error BH_GetName(OSc_Device *device, char *name)
 
 static OSc_Error BH_Open(OSc_Device *device)
 {
+	OSc_Return_If_Error(EnsureFLIMBoardInitialized());
+
 	SPCModInfo m_ModInfo;
 	// inUse = -1 means SPC150 board was still being used by previous session i.e. the code didn't exit correctly
 	// TODO: need to find the way to exit the board when the software crashes
@@ -214,6 +240,15 @@ static OSc_Error BH_Open(OSc_Device *device)
 		return OSc_Error_SPC150_MODULE_NOT_ACTIVE;
 	}
 
+	// read SPC150 parameters such as CFD, Sync, etc in a separate thread
+	// TODO: the issue starting monitor loop here is that if Stop Live is clicked
+	// i.e. stopRequested = true, the thread will exit and there is no way to restart it
+	DWORD id;
+	GetData(device)->acquisition.monitorThread = CreateThread(NULL, 0, BH_Monitor_Loop, device, 0, &id);
+
+	++g_openDeviceCount;
+
+	OSc_Log_Debug(device, "BH SPC150 board initialized");
 	return OSc_Error_OK;
 }
 
@@ -227,6 +262,10 @@ static OSc_Error BH_Close(OSc_Device *device)
 	while (acq->isRunning)
 		SleepConditionVariableCS(&acq->acquisitionFinishCondition, &acq->mutex, INFINITE);
 	LeaveCriticalSection(&acq->mutex);
+
+	--g_openDeviceCount;
+	if (g_openDeviceCount == 0)
+		OSc_Return_If_Error(DeinitializeFLIMBoard());
 
 	return OSc_Error_OK;
 }
