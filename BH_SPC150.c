@@ -6,7 +6,7 @@
 #pragma pack(1)
 
 static bool g_BH_initialized = false;
-static OSc_Device **g_devices;
+static OScDev_Device **g_devices;
 static size_t g_deviceCount;
 static size_t g_openDeviceCount = 0;
 
@@ -29,12 +29,12 @@ struct ReadoutState
 // supposed to be running all the time
 static DWORD WINAPI BH_Monitor_Loop(void *param)
 {
-	OSc_Device *device = (OSc_Device *)param;
+	OScDev_Device *device = (OScDev_Device *)param;
 	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
 	rate_values m_rates;
 	short act_mod = 0;
 
-	OSc_Log_Debug(device, "FLIM monitoring thread starting...");
+	OScDev_Log_Debug(device, "FLIM monitoring thread starting...");
 	bool stopRequested = false;
 	while (true)
 	{
@@ -45,7 +45,7 @@ static DWORD WINAPI BH_Monitor_Loop(void *param)
 		LeaveCriticalSection(&(acq->mutex));
 		if (stopRequested)
 		{
-			OSc_Log_Debug(device, "User interruption...Exiting FLIM monitor loop");
+			OScDev_Log_Debug(device, "User interruption...Exiting FLIM monitor loop");
 			GetData(device)->flimStarted = false;  // reset for next run
 			break;
 		}
@@ -89,10 +89,10 @@ static void PopulateDefaultParameters(struct BH_PrivateData *data)
 }
 
 
-static OSc_Error EnsureFLIMBoardInitialized(void)
+static OScDev_Error EnsureFLIMBoardInitialized(void)
 {
 	if (g_BH_initialized)
-		return OSc_Error_OK;
+		return OScDev_Error_Device_Already_Open;
 
 	short spcErr;
 	short spcRet;
@@ -104,10 +104,10 @@ static OSc_Error EnsureFLIMBoardInitialized(void)
 	spcErr = SPC_init("sspcm.ini");
 	if (spcErr < 0)
 	{
-		char msg[OSc_MAX_STR_LEN + 1] = "Cannot initialize BH SPC150 using: ";
-		strcat(msg, "spcm.ini");
-		OSc_Log_Error(NULL, msg);
-		return OSc_Error_SPC150_CANNOT_OPEN_FILE;
+		char msg[OScDev_MAX_STR_LEN + 1] = "Cannot initialize BH SPC150 using: ";
+		strcat(msg, "Sspcm.ini");
+		OScDev_Log_Error(NULL, msg);
+		return OScDev_Error_Unknown; // TODO: add error msg: CANNOT_OPEN_FILE
 	}
 
 	spcRet = SPC_get_module_info(MODULE, (SPCModInfo *)&m_ModInfo);
@@ -142,23 +142,23 @@ static OSc_Error EnsureFLIMBoardInitialized(void)
 		}
 	}
 	g_BH_initialized = true;
-	return OSc_Error_OK;
+	return OScDev_OK;
 }
 
 
-static OSc_Error DeinitializeFLIMBoard(void)
+static OScDev_Error DeinitializeFLIMBoard(void)
 {
 	if (!g_BH_initialized)
-		return OSc_Error_OK;
+		return OScDev_OK;
 	
 	// TODO - close the FLIM board
 
 	g_BH_initialized = false;
-	return OSc_Error_OK;
+	return OScDev_OK;
 }
 
 
-static OSc_Error EnumerateInstances(OSc_Device ***devices, size_t *count)
+static OScDev_Error EnumerateInstances(OScDev_Device ***devices, size_t *count)
 {
 	// TODO
 	// check if the FLIM board is available in the system
@@ -172,58 +172,61 @@ static OSc_Error EnumerateInstances(OSc_Device ***devices, size_t *count)
 	struct BH_PrivateData *data = calloc(1, sizeof(struct BH_PrivateData));
 	data->moduleNr = 0; // TODO for multiple modules
 
-	OSc_Device *device;
-	OSc_Error err;
-	if (OSc_Check_Error(err, OSc_Device_Create(&device, &BH_TCSCP150_Device_Impl, data)))
+	OScDev_Device *device;
+	OScDev_Error err;
+	if (OScDev_CHECK(err, OScDev_Device_Create(&device, &BH_TCSCP150_Device_Impl, data)))
 	{
-		char msg[OSc_MAX_STR_LEN + 1] = "Failed to create device for BH SPC150";
-		OSc_Log_Error(NULL, msg);
+		char msg[OScDev_MAX_STR_LEN + 1] = "Failed to create device for BH SPC150";
+		OScDev_Log_Error(device, msg);
 		return err;
 	}
 
 	PopulateDefaultParameters(GetData(device));
 
-	*devices = malloc(sizeof(OSc_Device *));
+	*devices = malloc(sizeof(OScDev_Device *));
 	*count = 1;
 	(*devices)[0] = device;
 
-	return OSc_Error_OK;
+	return OScDev_OK;
 }
 
 
-static OSc_Error BH_GetModelName(const char **name)
+static OScDev_Error BH_GetModelName(const char **name)
 {
 	*name = "Becker & Hickl TCSCP150";
-	return OSc_Error_OK;
+	return OScDev_OK;
 }
 
 
-static OSc_Error BH_GetInstances(OSc_Device ***devices, size_t *count)
+static OScDev_Error BH_GetInstances(OScDev_Device ***devices, size_t *count)
 {
-	if (!g_devices)
-		OSc_Return_If_Error(EnumerateInstances(&g_devices, &g_deviceCount));
+	OScDev_Error err;
+	if (!g_devices && OScDev_CHECK(err, EnumerateInstances(&g_devices, &g_deviceCount)))
+		return err;
 	*devices = g_devices;
 	*count = g_deviceCount;
-	return OSc_Error_OK;
+	return OScDev_OK;
 }
 
 
-static OSc_Error BH_ReleaseInstance(OSc_Device *device)
+static OScDev_Error BH_ReleaseInstance(OScDev_Device *device)
 {
-	return OSc_Error_OK;
+	return OScDev_OK;
 }
 
 
-static OSc_Error BH_GetName(OSc_Device *device, char *name)
+static OScDev_Error BH_GetName(OScDev_Device *device, char *name)
 {
-	strncpy(name, "BH SPC device", OSc_MAX_STR_LEN);
-	return OSc_Error_OK;
+	strncpy(name, "BH SPC device", OScDev_MAX_STR_LEN);
+	return OScDev_OK;
 }
 
 
-static OSc_Error BH_Open(OSc_Device *device)
+static OScDev_Error BH_Open(OScDev_Device *device)
 {
-	OSc_Return_If_Error(EnsureFLIMBoardInitialized());
+	OScDev_Error err;
+	if (OScDev_CHECK(err, EnsureFLIMBoardInitialized()))
+		return err;
 
 	SPCModInfo m_ModInfo;
 	// inUse = -1 means SPC150 board was still being used by previous session i.e. the code didn't exit correctly
@@ -237,7 +240,7 @@ static OSc_Error BH_Open(OSc_Device *device)
 		-1 /* TODO */, 0 /* TODO */, &memInfo);
 	if (spcErr < 0 || memInfo.maxpage == 0)
 	{
-		return OSc_Error_SPC150_MODULE_NOT_ACTIVE;
+		return OScDev_Error_Unknown; //TODO: OScDev_Error_SPC150_MODULE_NOT_ACTIVE
 	}
 
 	// read SPC150 parameters such as CFD, Sync, etc in a separate thread
@@ -248,12 +251,12 @@ static OSc_Error BH_Open(OSc_Device *device)
 
 	++g_openDeviceCount;
 
-	OSc_Log_Debug(device, "BH SPC150 board initialized");
-	return OSc_Error_OK;
+	OScDev_Log_Debug(device, "BH SPC150 board initialized");
+	return OScDev_OK;
 }
 
 
-static OSc_Error BH_Close(OSc_Device *device)
+static OScDev_Error BH_Close(OScDev_Device *device)
 {
 	struct AcqPrivateData *acq = &GetData(device)->acquisition;
 	EnterCriticalSection(&acq->mutex);
@@ -264,81 +267,85 @@ static OSc_Error BH_Close(OSc_Device *device)
 	LeaveCriticalSection(&acq->mutex);
 
 	--g_openDeviceCount;
-	if (g_openDeviceCount == 0)
-		OSc_Return_If_Error(DeinitializeFLIMBoard());
 
-	return OSc_Error_OK;
+	OScDev_Error err;
+	if (g_openDeviceCount == 0 && OScDev_CHECK(err, DeinitializeFLIMBoard()))
+		return err;
+
+	return OScDev_OK;
 }
 
 
-static OSc_Error BH_HasScanner(OSc_Device *device, bool *hasScanner)
+static OScDev_Error BH_HasScanner(OScDev_Device *device, bool *hasScanner)
 {
 	*hasScanner = false;
-	return OSc_Error_OK;
+	return OScDev_OK;
 }
 
 
-static OSc_Error BH_HasDetector(OSc_Device *device, bool *hasDetector)
+static OScDev_Error BH_HasDetector(OScDev_Device *device, bool *hasDetector)
 {
 	*hasDetector = true;
-	return OSc_Error_OK;
+	return OScDev_OK;
 }
 
 
-static OSc_Error BH_GetSettings(OSc_Device *device, OSc_Setting ***settings, size_t *count)
+static OScDev_Error BH_GetSettings(OScDev_Device *device, OScDev_Setting ***settings, size_t *count)
 {
-	OSc_Return_If_Error(BH_SPC150PrepareSettings(device));
+	OScDev_Error err;
+	if (OScDev_CHECK(err, BH_SPC150PrepareSettings(device)))
+		return err;
 	*settings = GetData(device)->settings;
 	*count = GetData(device)->settingCount;
-	return OSc_Error_OK;
+	return OScDev_OK;
 }
 
 
-static OSc_Error BH_GetAllowedResolutions(OSc_Device *device, size_t **widths, size_t **heights, size_t *count)
+static OScDev_Error BH_GetAllowedResolutions(OScDev_Device *device, size_t **widths, size_t **heights, size_t *count)
 {
 	static size_t resolutions[] = { 256, 512, 1024, 2048 };
 	*widths = *heights = resolutions;
 	*count = sizeof(resolutions) / sizeof(size_t);
-	return OSc_Error_OK;
+	return OScDev_OK;
 }
 
 
-static OSc_Error BH_GetResolution(OSc_Device *device, size_t *width, size_t *height)
+static OScDev_Error BH_GetResolution(OScDev_Device *device, size_t *width, size_t *height)
 {
 	SPCdata data;
 	short spcRet = SPC_get_parameters(GetData(device)->moduleNr, &data);
 	if (spcRet)
-		return OSc_Error_Unknown;
+		return OScDev_Error_Unknown;
 
 	//*width = data.scan_size_x;
 	//*height = data.scan_size_y;
 
 	*height = 256;
 	*width = 256;
-	return OSc_Error_OK;
+	return OScDev_OK;
 }
 
 
-static OSc_Error BH_SetResolution(OSc_Device *device, size_t width, size_t height)
+static OScDev_Error BH_SetResolution(OScDev_Device *device, size_t width, size_t height)
 {
 	short spcRet = SPC_set_parameter(GetData(device)->moduleNr,
 		SCAN_SIZE_X, (float)width);
 	if (spcRet)
-		return OSc_Error_Unknown;
+		return OScDev_Error_Unknown;
 	spcRet = SPC_set_parameter(GetData(device)->moduleNr,
 		SCAN_SIZE_Y, (float)height);
 	if (spcRet)
-		return OSc_Error_Unknown;
-	return OSc_Error_OK;
+		return OScDev_Error_Unknown;
+	return OScDev_OK;
 }
 
 
-static OSc_Error BH_GetImageSize(OSc_Device *device, uint32_t *width, uint32_t *height)
+static OScDev_Error BH_GetImageSize(OScDev_Device *device, uint32_t *width, uint32_t *height)
 {
 	// Currently all image sizes match the current resolution
 	size_t w, h;
-	OSc_Error err = BH_GetResolution(device, &w, &h);
-	if (err != OSc_Error_OK)
+	OScDev_Error err = BH_GetResolution(device, &w, &h);
+	if (err != OScDev_OK)
 		return err;
 	*width = (uint32_t)w;
 	*height = (uint32_t)h;
@@ -346,33 +353,36 @@ static OSc_Error BH_GetImageSize(OSc_Device *device, uint32_t *width, uint32_t *
 }
 
 
-static OSc_Error BH_GetNumberOfChannels(OSc_Device *device, uint32_t *nChannels)
+static OScDev_Error BH_GetNumberOfChannels(OScDev_Device *device, uint32_t *nChannels)
 {
 	*nChannels = 1;
-	return OSc_Error_OK;
+	return OScDev_OK;
 }
 
 
-static OSc_Error BH_GetBytesPerSample(OSc_Device *device, uint32_t *bytesPerSample)
+static OScDev_Error BH_GetBytesPerSample(OScDev_Device *device, uint32_t *bytesPerSample)
 {
 	*bytesPerSample = 2;
-	return OSc_Error_OK;
+	return OScDev_OK;
 }
 
 
 // Current main loop for FLIM acquisition
 static DWORD WINAPI BH_FIFO_Loop(void *param)
 {
-	OSc_Return_If_Error(set_measurement_params());
+	OScDev_Error err;
+	if (OScDev_CHECK(err, set_measurement_params()))
+		return err;
 
-	OSc_Device *device = (OSc_Device *)param;
+	OScDev_Device *device = (OScDev_Device *)param;
 	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
 	SPCdata parameterCheck;
 	SPC_get_parameters(0, &parameterCheck);
-	OSc_Return_If_Error(set_measurement_params());
+	if (OScDev_CHECK(err, set_measurement_params()))
+		return err;
 
 	acq->firstWrite = 1;
-	OSc_Log_Debug(device, "Waiting for user to start FLIM acquisition...");
+	OScDev_Log_Debug(device, "Waiting for user to start FLIM acquisition...");
 
 	//adapted from init_fifo_measurement
 
@@ -524,7 +534,7 @@ static DWORD WINAPI BH_FIFO_Loop(void *param)
 	unsigned long totMacroTime = 0;
 
 	SPC_get_parameters(0, &parameterCheck);
-	//snprintf(msg, OSc_MAX_STR_LEN, "Updated magnification is: %6.2f", *magnification);
+	//snprintf(msg, OScDev_MAX_STR_LEN, "Updated magnification is: %6.2f", *magnification);
 
 	bool stopRequested;  // allow user to stop acquisition
 	// do not start FLIM acquisition until user click 'StartFLIM'
@@ -538,13 +548,13 @@ static DWORD WINAPI BH_FIFO_Loop(void *param)
 		LeaveCriticalSection(&(acq->mutex));
 		if (acq->started)
 		{
-			OSc_Log_Debug(device, "user started FLIM acquisition");
+			OScDev_Log_Debug(device, "user started FLIM acquisition");
 			break;
 		}
 		if (stopRequested)
 		{
 			GetData(device)->flimStarted = false;  // reset to false for next run
-			OSc_Log_Debug(device, "User interruption...");
+			OScDev_Log_Debug(device, "User interruption...");
 			break;
 		}
 		Sleep(100);
@@ -552,9 +562,9 @@ static DWORD WINAPI BH_FIFO_Loop(void *param)
 	
 	// TODO: not sure if the loop should directly exit here if stop is reuqested?
 	spcRet = SPC_start_measurement(GetData(device)->moduleNr);
-	char msg[OSc_MAX_STR_LEN + 1];
-	snprintf(msg, OSc_MAX_STR_LEN, "return value after start measurement %d", spcRet);
-	OSc_Log_Debug(device, msg);
+	char msg[OScDev_MAX_STR_LEN + 1];
+	snprintf(msg, OScDev_MAX_STR_LEN, "return value after start measurement %d", spcRet);
+	OScDev_Log_Debug(device, msg);
 
 	// keep acquiring photon data until the set acquisition time is over
 	GetData(device)->flimDone = false; 
@@ -565,15 +575,15 @@ static DWORD WINAPI BH_FIFO_Loop(void *param)
 		LeaveCriticalSection(&(acq->mutex));
 		if (stopRequested)
 		{
-			OSc_Log_Debug(device, "User interruption...Exiting FLIM acquisition loop...");
+			OScDev_Log_Debug(device, "User interruption...Exiting FLIM acquisition loop...");
 			GetData(device)->flimStarted = false;  // reset for next run
 			break;
 		}
 
 		loopcount++;  // debug use only
-		//char msg[OSc_MAX_STR_LEN + 1];
-		//snprintf(msg, OSc_MAX_STR_LEN, "Current FLIM loop: %d", loopcount);
-		//OSc_Log_Debug(device, msg);
+		//char msg[OScDev_MAX_STR_LEN + 1];
+		//snprintf(msg, OScDev_MAX_STR_LEN, "Current FLIM loop: %d", loopcount);
+		//OScDev_Log_Debug(device, msg);
 
 		// now test SPC state and read photons
 		SPC_test_state(act_mod, &state);
@@ -585,8 +595,8 @@ static DWORD WINAPI BH_FIFO_Loop(void *param)
 		}
 		if (state != 192)//check for debugging, not needed (DELETE)
 		{
-			snprintf(msg, OSc_MAX_STR_LEN, "inside while, state %d", state);
-			OSc_Log_Debug(device, msg);
+			snprintf(msg, OScDev_MAX_STR_LEN, "inside while, state %d", state);
+			OScDev_Log_Debug(device, msg);
 		}
 
 		if (words_left > max_words_in_buf - words_in_buf)
@@ -617,7 +627,7 @@ static DWORD WINAPI BH_FIFO_Loop(void *param)
 
 			if (state & SPC_FOVFL) {
 
-				OSc_Log_Debug(device, "SPC Overload");
+				OScDev_Log_Debug(device, "SPC Overload");
 				break;
 				//should I read the rest of the data? 
 			}
@@ -626,7 +636,7 @@ static DWORD WINAPI BH_FIFO_Loop(void *param)
 					  
 																	  //there should be exit code here if time over by 10 seconds
 
-				OSc_Log_Debug(device, "FLIM Collection time over 1");
+				OScDev_Log_Debug(device, "FLIM Collection time over 1");
 				break;
 
 			}
@@ -640,7 +650,7 @@ static DWORD WINAPI BH_FIFO_Loop(void *param)
 				spcRet= save_photons_in_file(acq);
 				totalWord += words_in_buf;
 				acq->words_in_buf=words_in_buf = 0;
-				OSc_Log_Debug(device, "Maximum buffer reached");
+				OScDev_Log_Debug(device, "Maximum buffer reached");
 			}
 		}
 		else { //enters when SPC is not armed //NOT armed when measurement is NOT in progress
@@ -659,17 +669,17 @@ static DWORD WINAPI BH_FIFO_Loop(void *param)
 		}
 		if ((state & SPC_COLTIM_OVER) | (state & SPC_TIME_OVER)) {//if overtime occured, that should be over
 																  //there should be exit code here if time over by 10 seconds
-				OSc_Log_Debug(device, "FLIM Collection time over 2");
+				OScDev_Log_Debug(device, "FLIM Collection time over 2");
 				break; 
 		}
 	}
 
 	// SPC_stop_measurement should be called even if the measurement was stopped after collection time
 	//           to set DLL internal variables
-	OSc_Log_Debug(device, "Finished FLIM");
+	OScDev_Log_Debug(device, "Finished FLIM");
 
-	snprintf(msg, OSc_MAX_STR_LEN, "total words acquired %d", totalWord);
-	OSc_Log_Debug(device, msg);
+	snprintf(msg, OScDev_MAX_STR_LEN, "total words acquired %d", totalWord);
+	OScDev_Log_Debug(device, msg);
 
 	SPC_stop_measurement(act_mod);
 	SPC_stop_measurement(act_mod);
@@ -689,11 +699,10 @@ static DWORD WINAPI BH_FIFO_Loop(void *param)
 		free(acq->buffer);
 	}
 
-	OSc_Error err;
 	//write the SDT file
-	if (OSc_Check_Error(err, BH_LTDataSave(device)))
+	if (OScDev_CHECK(err, BH_LTDataSave(device)))
 	{
-		OSc_Log_Error(device, "Error writing SDT file");
+		OScDev_Log_Error(device, "Error writing SDT file");
 		BH_FinishAcquisition(device);
 		return 0;
 	}
@@ -702,7 +711,7 @@ static DWORD WINAPI BH_FIFO_Loop(void *param)
 	return 0;
 }
 
-static void BH_FinishAcquisition(OSc_Device *device)
+static void BH_FinishAcquisition(OScDev_Device *device)
 {
 	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
 	EnterCriticalSection(&(acq->mutex));
@@ -713,7 +722,7 @@ static void BH_FinishAcquisition(OSc_Device *device)
 	WakeAllConditionVariable(cv);
 }
 
-OSc_Error set_measurement_params() {
+OScDev_Error set_measurement_params() {
 	/*
 	-the SPC parameters must be set(SPC_init or SPC_set_parameter(s)),
 		-the SPC memory must be configured(SPC_configure_memory in normal modes),
@@ -746,11 +755,11 @@ OSc_Error set_measurement_params() {
 		return ret;
 	}
 
-	return OSc_Error_OK;
+	return OScDev_OK;
 }
 
 
-OSc_Error save_photons_in_file(struct AcqPrivateData *acq) {
+OScDev_Error save_photons_in_file(struct AcqPrivateData *acq) {
 	
 	long ret;
 	int i;
@@ -806,15 +815,15 @@ OSc_Error save_photons_in_file(struct AcqPrivateData *acq) {
 	if (ret != 2 * acq->words_in_buf)
 		return -1;     // error type in errno
 		
-	return OSc_Error_OK;
+	return OScDev_OK;
 
 }
 
 
 // write SDT file
-OSc_Error BH_LTDataSave(void *param) 
+OScDev_Error BH_LTDataSave(void *param) 
 {
-	OSc_Device *device = (OSc_Device *)param;
+	OScDev_Device *device = (OScDev_Device *)param;
 	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
 	///uint32_t collectionTime = GetData(device)->acqTime; //get collection time
 	//SPC_save_data_to_sdtfile(-1, acq->buffer, 50000, "testSDT.sdt"); // cannot run on mode=5
@@ -1010,7 +1019,7 @@ OSc_Error BH_LTDataSave(void *param)
 																									   //short *iPhotonCountBuffer;//should be void*
 	iPhotonCountBuffer = (short*)malloc(iPhotonCountBufferSize);
 	if (iPhotonCountBuffer == NULL) {
-		return OSc_Error_SPC150_Buffer_Empty;
+		return OScDev_Error_Unknown; //TODO: OScDev_Error_SPC150_Buffer_Empty;
 	}
 
 	flagFreeBuff = 0;//0- indicates buffer is full//1 indicates empty
@@ -1159,7 +1168,7 @@ OSc_Error BH_LTDataSave(void *param)
 
 	fclose(headerFile);
 
-	//OSc_Log_Debug(device, "User interruption for FooLoop...");
+	//OScDev_Log_Debug(device, "User interruption for FooLoop...");
 
 	/* addition ends */
 	free(iPhotonCountBuffer);
@@ -1168,15 +1177,15 @@ OSc_Error BH_LTDataSave(void *param)
     // indicate the status of FLIM acquisition
 	GetData(device)->flimDone = true;
 
-	return OSc_Error_OK;
+	return OScDev_OK;
 }
 
 
 // plan to use to extract intensity image from spc data
 // not used in current version
-OSc_Error BH_extractPhoton(void *param) {
+OScDev_Error BH_extractPhoton(void *param) {
 	//int a = 1;
-	OSc_Device *device = (OSc_Device *)param;
+	OScDev_Device *device = (OScDev_Device *)param;
 	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
 
 
@@ -1283,17 +1292,21 @@ OSc_Error BH_extractPhoton(void *param) {
 
 	}
 
-	OSc_Error err;
-	if (OSc_Check_Error(err, BH_LTDataSave(acq)))
+	OScDev_Error err;
+	if (OScDev_CHECK(err, BH_LTDataSave(acq)))
+	{
+		char msg[OScDev_MAX_STR_LEN + 1] = "Failed to save SDT file";
+		OScDev_Log_Error(device, msg);
 		return err;
+	}
 
-	return OSc_Error_OK;
+	return OScDev_OK;
 
 }
 
 
 
-static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
+static OScDev_Error BH_ArmDetector(OScDev_Device *device, OScDev_Acquisition *acq)
 {
 	struct AcqPrivateData *privAcq = &(GetData(device)->acquisition);
 	EnterCriticalSection(&(privAcq->mutex));
@@ -1302,9 +1315,9 @@ static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 		{
 			LeaveCriticalSection(&(privAcq->mutex));
 			if (privAcq->started)
-				return OSc_Error_Acquisition_Running;
+				return OScDev_Error_Acquisition_Running;
 			else
-				return OSc_Error_OK;
+				return OScDev_OK;
 		}
 		privAcq->stopRequested = false;
 		privAcq->isRunning = true;
@@ -1312,7 +1325,7 @@ static OSc_Error BH_ArmDetector(OSc_Device *device, OSc_Acquisition *acq)
 	}
 	LeaveCriticalSection(&(privAcq->mutex));
 
-	return OSc_Error_OK;
+	return OScDev_OK;
 }
 
 
@@ -1330,7 +1343,7 @@ unsigned short compute_checksum(void* hdr) {
 }
 
 
-static OSc_Error BH_StartDetector(OSc_Device *device, OSc_Acquisition *acq)
+static OScDev_Error BH_StartDetector(OScDev_Device *device, OScDev_Acquisition *acq)
 {
 	struct AcqPrivateData *privAcq = &(GetData(device)->acquisition);
 
@@ -1339,12 +1352,12 @@ static OSc_Error BH_StartDetector(OSc_Device *device, OSc_Acquisition *acq)
 		if (!(privAcq->isRunning))
 		{
 			LeaveCriticalSection(&(privAcq->mutex));
-			return OSc_Error_Not_Armed;
+			return OScDev_Error_Not_Armed;
 		}
 		if (privAcq->started)
 		{
 			LeaveCriticalSection(&(privAcq->mutex));
-			return OSc_Error_Acquisition_Running;
+			return OScDev_Error_Acquisition_Running;
 		}
 		privAcq->started = GetData(device)->flimStarted;  // only true if user set flimStarted to True
 	}
@@ -1358,7 +1371,7 @@ static OSc_Error BH_StartDetector(OSc_Device *device, OSc_Acquisition *acq)
 	// FLIm acquisition thread
 	privAcq->thread = CreateThread(NULL, 0, BH_FIFO_Loop, device, 0, &id);
 
-	return OSc_Error_OK;
+	return OScDev_OK;
 
 	//test insert
 	//EnterCriticalSection(&(privAcq->mutex));
@@ -1367,18 +1380,18 @@ static OSc_Error BH_StartDetector(OSc_Device *device, OSc_Acquisition *acq)
 	//LeaveCriticalSection(&(privAcq->mutex));
 	//WakeAllConditionVariable(&(privAcq->acquisitionFinishCondition));
 
-	//return OSc_Error_Unsupported_Operation;
+	//return OScDev_Error_Unsupported_Operation;
 }
 
 
-static OSc_Error BH_StopDetector(OSc_Device *device, OSc_Acquisition *acq)
+static OScDev_Error BH_StopDetector(OScDev_Device *device, OScDev_Acquisition *acq)
 {
 	EnterCriticalSection(&(GetData(device)->acquisition.mutex));
 	{
 		if (!GetData(device)->acquisition.isRunning)
 		{
 			LeaveCriticalSection(&(GetData(device)->acquisition.mutex));
-			return OSc_Error_OK;
+			return OScDev_OK;
 		}
 		GetData(device)->acquisition.stopRequested = true;
 	}
@@ -1387,9 +1400,9 @@ static OSc_Error BH_StopDetector(OSc_Device *device, OSc_Acquisition *acq)
 }
 
 
-static OSc_Error BH_WaitForAcquisitionToFinish(OSc_Device *device)
+static OScDev_Error BH_WaitForAcquisitionToFinish(OScDev_Device *device)
 {
-	OSc_Error err = OSc_Error_OK;
+	OScDev_Error err = OScDev_OK;
 	CONDITION_VARIABLE *cv = &(GetData(device)->acquisition.acquisitionFinishCondition);
 
 	EnterCriticalSection(&(GetData(device)->acquisition.mutex));
@@ -1402,22 +1415,22 @@ static OSc_Error BH_WaitForAcquisitionToFinish(OSc_Device *device)
 }
 
 
-static OSc_Error BH_IsRunning(OSc_Device *device, bool *isRunning)
+static OScDev_Error BH_IsRunning(OScDev_Device *device, bool *isRunning)
 {
 	EnterCriticalSection(&(GetData(device)->acquisition.mutex));
 	*isRunning = GetData(device)->acquisition.isRunning;
 	LeaveCriticalSection(&(GetData(device)->acquisition.mutex));
-	return OSc_Error_OK;
+	return OScDev_OK;
 }
 
 
-static OSc_Error BH_Wait(OSc_Device *device)
+static OScDev_Error BH_Wait(OScDev_Device *device)
 {
 	return BH_WaitForAcquisitionToFinish(device);
 }
 
 
-struct OSc_Device_Impl BH_TCSCP150_Device_Impl = {
+struct OScDev_DeviceImpl BH_TCSCP150_Device_Impl = {
 	.GetModelName = BH_GetModelName,
 	.GetInstances = BH_GetInstances,
 	.ReleaseInstance = BH_ReleaseInstance,
@@ -1438,4 +1451,20 @@ struct OSc_Device_Impl BH_TCSCP150_Device_Impl = {
 	.StopDetector = BH_StopDetector,
 	.IsRunning = BH_IsRunning,
 	.Wait = BH_Wait,
+};
+
+static OScDev_Error GetDeviceImpls(struct OScDev_DeviceImpl **impls, size_t *implCount)
+{
+	if (*implCount < 1)
+		return OScDev_OK;
+
+	impls[0] = &BH_TCSCP150_Device_Impl;
+	*implCount = 1;
+	return OScDev_OK;
+}
+
+
+OScDev_MODULE_IMPL = {
+	.displayName = "OpenScan BH-SPC150",
+	.GetDeviceImpls = GetDeviceImpls,
 };

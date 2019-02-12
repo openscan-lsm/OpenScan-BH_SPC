@@ -1,289 +1,321 @@
 #include "BH_SPC150Private.h"
-#include "OpenScanLibPrivate.h"
-#include "OpenScanDeviceImpl.h"
 
-static OSc_Error GetFileName(OSc_Setting *setting, char *value)
+
+// For most settings, we set the setting's implData to the device.
+// This function can then be used to retrieve the device implData.
+static inline struct BH_PrivateData *GetSettingDeviceData(OScDev_Setting *setting)
+{
+	return (struct BH_PrivateData *)OScDev_Device_GetImplData((OScDev_Device *)OScDev_Setting_GetImplData(setting));
+}
+
+
+OScDev_Error GetNumericConstraintTypeImpl_DiscreteValues(OScDev_Setting *setting, enum OScDev_ValueConstraint *constraintType)
+{
+	*constraintType = OScDev_ValueConstraint_DiscreteValues;
+	return OScDev_OK;
+}
+
+
+OScDev_Error GetNumericConstraintTypeImpl_Range(OScDev_Setting *setting, enum OScDev_ValueConstraint *constraintType)
+{
+	*constraintType = OScDev_ValueConstraint_Range;
+	return OScDev_OK;
+}
+
+
+static OScDev_Error GetFileName(OScDev_Setting *setting, char *value)
  {
-	strcpy(value, GetData(setting->device)->flimFileName);
-	return OSc_Error_OK;
+	strcpy(value, GetSettingDeviceData(setting)->flimFileName);
+	return OScDev_OK;
 	}
 
-static OSc_Error SetFileName(OSc_Setting *setting, const char *value)
+static OScDev_Error SetFileName(OScDev_Setting *setting, const char *value)
  {
-	strcpy(GetData(setting->device)->flimFileName, value);
-	return OSc_Error_OK;
+	strcpy(GetSettingDeviceData(setting)->flimFileName, value);
+	return OScDev_OK;
 	}
 
-static struct OSc_Setting_Impl SettingImpl_FileName = {
+static struct OScDev_SettingImpl SettingImpl_FileName = {
 	.GetString = GetFileName,
 	.SetString = SetFileName,
 };
 
-static OSc_Error GetFLIMStarted(OSc_Setting *setting, bool *value)
+static OScDev_Error GetFLIMStarted(OScDev_Setting *setting, bool *value)
 {
-	*value = GetData(setting->device)->flimStarted;
-	return OSc_Error_OK;
+	*value = GetSettingDeviceData(setting)->flimStarted;
+	return OScDev_OK;
 }
 
 
-static OSc_Error SetFLIMStarted(OSc_Setting *setting, bool value)
+static OScDev_Error SetFLIMStarted(OScDev_Setting *setting, bool value)
 {
-	GetData(setting->device)->flimStarted = value;
-	GetData(setting->device)->settingsChanged = true;
-	return OSc_Error_OK;
+	GetSettingDeviceData(setting)->flimStarted = value;
+	GetSettingDeviceData(setting)->settingsChanged = true;
+	return OScDev_OK;
 }
 
 
-static struct OSc_Setting_Impl SettingImpl_FLIMStarted = {
+static struct OScDev_SettingImpl SettingImpl_FLIMStarted = {
 	.GetBool = GetFLIMStarted,
 	.SetBool = SetFLIMStarted,
 };
 
 
-static OSc_Error GetFLIMFinished(OSc_Setting *setting, bool *value)
+static OScDev_Error GetFLIMFinished(OScDev_Setting *setting, bool *value)
 {
-	*value = GetData(setting->device)->flimDone;
-	return OSc_Error_OK;
+	*value = GetSettingDeviceData(setting)->flimDone;
+	return OScDev_OK;
 }
 
 
-static OSc_Error SetFLIMFinished(OSc_Setting *setting, bool value)
+static OScDev_Error SetFLIMFinished(OScDev_Setting *setting, bool value)
 {
-	GetData(setting->device)->flimDone = value;
-	return OSc_Error_OK;
+	GetSettingDeviceData(setting)->flimDone = value;
+	return OScDev_OK;
 }
 
 
-static struct OSc_Setting_Impl SettingImpl_FLIMFinished = {
+static struct OScDev_SettingImpl SettingImpl_FLIMFinished = {
 	.GetBool = GetFLIMFinished,
 	.SetBool = SetFLIMFinished,
 };
 
 
-static OSc_Error GetMonitoringFLIM(OSc_Setting *setting, bool *value)
+static OScDev_Error GetMonitoringFLIM(OScDev_Setting *setting, bool *value)
 {
-	*value = GetData(setting->device)->monitoringFLIM;
-	return OSc_Error_OK;
+	*value = GetSettingDeviceData(setting)->monitoringFLIM;
+	return OScDev_OK;
 }
 
 
-static OSc_Error SetMonitoringFLIM(OSc_Setting *setting, bool value)
+static OScDev_Error SetMonitoringFLIM(OScDev_Setting *setting, bool value)
 {
-	GetData(setting->device)->monitoringFLIM = value;
-	return OSc_Error_OK;
+	GetSettingDeviceData(setting)->monitoringFLIM = value;
+	return OScDev_OK;
 }
 
 
-static struct OSc_Setting_Impl SettingImpl_MonitoringFLIM = {
+static struct OScDev_SettingImpl SettingImpl_MonitoringFLIM = {
 	.GetBool = GetMonitoringFLIM,
 	.SetBool = SetMonitoringFLIM,
 };
 
 
-static OSc_Error GetAcqTime(OSc_Setting *setting, int32_t *value)
+static OScDev_Error GetAcqTime(OScDev_Setting *setting, int32_t *value)
 {
-	*value = GetData(setting->device)->acqTime;
-	return OSc_Error_OK;
+	*value = GetSettingDeviceData(setting)->acqTime;
+	return OScDev_OK;
 }
 
 
-static OSc_Error SetAcqTime(OSc_Setting *setting, int32_t value)
+static OScDev_Error SetAcqTime(OScDev_Setting *setting, int32_t value)
 {
-	GetData(setting->device)->acqTime = value;
-	GetData(setting->device)->settingsChanged = true;
-	return OSc_Error_OK;
+	GetSettingDeviceData(setting)->acqTime = value;
+	GetSettingDeviceData(setting)->settingsChanged = true;
+	return OScDev_OK;
 }
 
 
-static OSc_Error GetAcqTimeRange(OSc_Setting *setting, int32_t *min, int32_t *max)
+static OScDev_Error GetAcqTimeRange(OScDev_Setting *setting, int32_t *min, int32_t *max)
 {
 	*min = 1;
 	*max = 3600;  // 1 hour
-	return OSc_Error_OK;
+	return OScDev_OK;
 }
 
 
-static struct OSc_Setting_Impl SettingImpl_BHAcqTime = {
+static struct OScDev_SettingImpl SettingImpl_BHAcqTime = {
 	.GetInt32 = GetAcqTime,
 	.SetInt32 = SetAcqTime,
-	.GetNumericConstraintType = OSc_Setting_NumericConstraintRange,
+	.GetNumericConstraintType = GetNumericConstraintTypeImpl_Range,
 	.GetInt32Range = GetAcqTimeRange,
 };
 
 
-static OSc_Error GetCFD(OSc_Setting *setting, double *value)
+static OScDev_Error GetCFD(OScDev_Setting *setting, double *value)
 {
-	*value = GetData(setting->device)->acquisition.cfd_value;
-	return OSc_Error_OK;
+	*value = GetSettingDeviceData(setting)->acquisition.cfd_value;
+	return OScDev_OK;
 }
 
 
-static OSc_Error SetCFD(OSc_Setting *setting, double value)
+static OScDev_Error SetCFD(OScDev_Setting *setting, double value)
 {
 	// read only
-	return OSc_Error_OK;
+	return OScDev_OK;
 }
 
 
-static OSc_Error GetCFDRange(OSc_Setting *setting, double *min, double *max)
+static OScDev_Error GetCFDRange(OScDev_Setting *setting, double *min, double *max)
 {
 	*min = 1.0;
 	*max = 1e8;
-	return OSc_Error_OK;
+	return OScDev_OK;
 }
 
 
-static struct OSc_Setting_Impl SettingImpl_CFD = {
+static struct OScDev_SettingImpl SettingImpl_CFD = {
 	.GetFloat64 = GetCFD,
 	.SetFloat64 = SetCFD,
-	.GetNumericConstraintType = OSc_Setting_NumericConstraintRange,
+	.GetNumericConstraintType = GetNumericConstraintTypeImpl_Range,
 	.GetFloat64Range = GetCFDRange,
 };
 
 
-static OSc_Error GetSyncValue(OSc_Setting *setting, double *value)
+static OScDev_Error GetSyncValue(OScDev_Setting *setting, double *value)
 {
-	*value = GetData(setting->device)->acquisition.sync_value;
-	return OSc_Error_OK;
+	*value = GetSettingDeviceData(setting)->acquisition.sync_value;
+	return OScDev_OK;
 }
 
 
-static OSc_Error SetSyncValue(OSc_Setting *setting, double value)
+static OScDev_Error SetSyncValue(OScDev_Setting *setting, double value)
 {
 	// read only
-	return OSc_Error_OK;
+	return OScDev_OK;
 }
 
 
-static OSc_Error GetSyncValueRange(OSc_Setting *setting, double *min, double *max)
+static OScDev_Error GetSyncValueRange(OScDev_Setting *setting, double *min, double *max)
 {
 	*min = 1.0;
 	*max = 1e8;
-	return OSc_Error_OK;
+	return OScDev_OK;
 }
 
 
-static struct OSc_Setting_Impl SettingImpl_Sync = {
+static struct OScDev_SettingImpl SettingImpl_Sync = {
 	.GetFloat64 = GetSyncValue,
 	.SetFloat64 = SetSyncValue,
-	.GetNumericConstraintType = OSc_Setting_NumericConstraintRange,
+	.GetNumericConstraintType = GetNumericConstraintTypeImpl_Range,
 	.GetFloat64Range = GetSyncValueRange,
 };
 
 
-static OSc_Error GetADC(OSc_Setting *setting, double *value)
+static OScDev_Error GetADC(OScDev_Setting *setting, double *value)
 {
-	*value = GetData(setting->device)->acquisition.adc_value;
-	return OSc_Error_OK;
+	*value = GetSettingDeviceData(setting)->acquisition.adc_value;
+	return OScDev_OK;
 }
 
 
-static OSc_Error SetADC(OSc_Setting *setting, double value)
+static OScDev_Error SetADC(OScDev_Setting *setting, double value)
 {
 	// read only
-	return OSc_Error_OK;
+	return OScDev_OK;
 }
 
 
-static OSc_Error GetADCRange(OSc_Setting *setting, double *min, double *max)
+static OScDev_Error GetADCRange(OScDev_Setting *setting, double *min, double *max)
 {
 	*min = 1.0;
 	*max = 1e8;
-	return OSc_Error_OK;
+	return OScDev_OK;
 }
 
 
-static struct OSc_Setting_Impl SettingImpl_ADC = {
+static struct OScDev_SettingImpl SettingImpl_ADC = {
 	.GetFloat64 = GetADC,
 	.SetFloat64 = SetADC,
-	.GetNumericConstraintType = OSc_Setting_NumericConstraintRange,
+	.GetNumericConstraintType = GetNumericConstraintTypeImpl_Range,
 	.GetFloat64Range = GetADCRange,
 };
 
 
-static OSc_Error GetTAC(OSc_Setting *setting, double *value)
+static OScDev_Error GetTAC(OScDev_Setting *setting, double *value)
 {
-	*value = GetData(setting->device)->acquisition.tac_value;
-	return OSc_Error_OK;
+	*value = GetSettingDeviceData(setting)->acquisition.tac_value;
+	return OScDev_OK;
 }
 
 
-static OSc_Error SetTAC(OSc_Setting *setting, double value)
+static OScDev_Error SetTAC(OScDev_Setting *setting, double value)
 {
 	// read only
-	return OSc_Error_OK;
+	return OScDev_OK;
 }
 
 
-static OSc_Error GetTACRange(OSc_Setting *setting, double *min, double *max)
+static OScDev_Error GetTACRange(OScDev_Setting *setting, double *min, double *max)
 {
 	*min = 1.0;
 	*max = 1e8;
-	return OSc_Error_OK;
+	return OScDev_OK;
 }
 
 
-static struct OSc_Setting_Impl SettingImpl_TAC = {
+static struct OScDev_SettingImpl SettingImpl_TAC = {
 	.GetFloat64 = GetTAC,
 	.SetFloat64 = SetTAC,
-	.GetNumericConstraintType = OSc_Setting_NumericConstraintRange,
+	.GetNumericConstraintType = GetNumericConstraintTypeImpl_Range,
 	.GetFloat64Range = GetTACRange,
 };
 
-OSc_Error BH_SPC150PrepareSettings(OSc_Device *device)
+OScDev_Error BH_SPC150PrepareSettings(OScDev_Device *device)
 {
 	if (GetData(device)->settings)
-		return OSc_Error_OK;
+		return OScDev_OK;
 
-	OSc_Setting *fileName;
-	OSc_Return_If_Error(OSc_Setting_Create(&fileName, device, "BH-FileName", OSc_Value_Type_String,
-		&SettingImpl_FileName, NULL));
+	OScDev_Error err;
 
-	OSc_Setting *flimStarted;
-	OSc_Return_If_Error(OSc_Setting_Create(&flimStarted, device, "BH-StartFLIM", OSc_Value_Type_Bool,
-		&SettingImpl_FLIMStarted, NULL));
+	OScDev_Setting *fileName;
+	if (OScDev_CHECK(err, OScDev_Setting_Create(&fileName, "BH-FileName", OScDev_ValueType_String,
+		&SettingImpl_FileName, device)))
+		return err;
 
-	OSc_Setting *flimFinished;
-	OSc_Return_If_Error(OSc_Setting_Create(&flimFinished, device, "BH-FLIMFinished", OSc_Value_Type_Bool,
-		&SettingImpl_FLIMFinished, NULL));
+	OScDev_Setting *flimStarted;
+	if (OScDev_CHECK(err, OScDev_Setting_Create(&flimStarted, "BH-StartFLIM", OScDev_ValueType_Bool,
+		&SettingImpl_FLIMStarted, device)))
+		return err;
+
+	OScDev_Setting *flimFinished;
+	if (OScDev_CHECK(err, OScDev_Setting_Create(&flimFinished, "BH-FLIMFinished", OScDev_ValueType_Bool,
+		&SettingImpl_FLIMFinished, device)))
+		return err;
 	
-	OSc_Setting *monitoringFLIM;
-	OSc_Return_If_Error(OSc_Setting_Create(&monitoringFLIM, device, "BH-MonitoringFLIM", OSc_Value_Type_Bool,
-		&SettingImpl_MonitoringFLIM, NULL));
+	OScDev_Setting *monitoringFLIM;
+	if (OScDev_CHECK(err, OScDev_Setting_Create(&monitoringFLIM, "BH-MonitoringFLIM", OScDev_ValueType_Bool,
+		&SettingImpl_MonitoringFLIM, device)))
+		return err;
 
-	OSc_Setting *acqTime;
-	OSc_Return_If_Error(OSc_Setting_Create(&acqTime, device, "BH_AcqTime", OSc_Value_Type_Int32,
-		&SettingImpl_BHAcqTime, NULL));
+	OScDev_Setting *acqTime;
+	if (OScDev_CHECK(err, OScDev_Setting_Create(&acqTime, "BH_AcqTime", OScDev_ValueType_Int32,
+		&SettingImpl_BHAcqTime, device)))
+		return err;
 
-	OSc_Setting *cfd_value;
-	OSc_Return_If_Error(OSc_Setting_Create(&cfd_value, device, "BH_CFD", OSc_Value_Type_Float64,
-		&SettingImpl_CFD, NULL));
+	OScDev_Setting *cfd_value;
+	if (OScDev_CHECK(err, OScDev_Setting_Create(&cfd_value, "BH_CFD", OScDev_ValueType_Float64,
+		&SettingImpl_CFD, device)))
+		return err;
 
-	OSc_Setting *sync_value;
-	OSc_Return_If_Error(OSc_Setting_Create(&sync_value, device, "BH_Sync", OSc_Value_Type_Float64,
-		&SettingImpl_Sync, NULL));
+	OScDev_Setting *sync_value;
+	if (OScDev_CHECK(err, OScDev_Setting_Create(&sync_value, "BH_Sync", OScDev_ValueType_Float64,
+		&SettingImpl_Sync, device)))
+		return err;
 
-	OSc_Setting *adc_value;
-	OSc_Return_If_Error(OSc_Setting_Create(&adc_value, device, "BH_ADC", OSc_Value_Type_Float64,
-		&SettingImpl_ADC, NULL));
-
-
-	OSc_Setting *tac_value;
-	OSc_Return_If_Error(OSc_Setting_Create(&tac_value, device, "BH_TAC", OSc_Value_Type_Float64,
-		&SettingImpl_TAC, NULL));
+	OScDev_Setting *adc_value;
+	if (OScDev_CHECK(err, OScDev_Setting_Create(&adc_value, "BH_ADC", OScDev_ValueType_Float64,
+		&SettingImpl_ADC, device)))
+		return err;
 
 
-	OSc_Setting *ss[] = {
+	OScDev_Setting *tac_value;
+	if (OScDev_CHECK(err, OScDev_Setting_Create(&tac_value, "BH_TAC", OScDev_ValueType_Float64,
+		&SettingImpl_TAC, device)))
+		return err;
+
+
+	OScDev_Setting *ss[] = {
 		fileName, flimStarted, flimFinished, monitoringFLIM, acqTime,
 		cfd_value, sync_value, adc_value, tac_value,
 	};  // OSc_Device_Get_Settings() returns count = 1 when this has NULL inside
-	size_t nSettings = sizeof(ss) / sizeof(OSc_Setting *);
+	size_t nSettings = sizeof(ss) / sizeof(OScDev_Setting *);
 	if (*ss == NULL)
 		nSettings = 0;
-	OSc_Setting **settings = malloc(sizeof(ss));
+	OScDev_Setting **settings = malloc(sizeof(ss));
 	memcpy(settings, ss, sizeof(ss));
 
 	GetData(device)->settings = settings;
 	GetData(device)->settingCount = nSettings;
-	return OSc_Error_OK;
+	return OScDev_OK;
 }

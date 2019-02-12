@@ -1,7 +1,7 @@
 #pragma once
 #pragma pack(1)
 
-#include "OpenScanLibPrivate.h"
+#include "OpenScanDeviceLib.h"
 
 #include <Spcm_def.h>
 
@@ -59,7 +59,7 @@
 
 struct AcqPrivateData
 {
-	OSc_Acquisition *acquisition;
+	OScDev_Acquisition *acquisition;
 
 	uint16_t *frameBuffer;
 	size_t width;
@@ -81,7 +81,6 @@ struct AcqPrivateData
 	short streamHandle;
 
 	bool wroteHeader;
-	char fileName[OSc_MAX_STR_LEN];
 
 	//FIFO params
 	short fifo_type;
@@ -90,8 +89,6 @@ struct AcqPrivateData
 	short initVariableTyope;
 	short firstWrite;
 	char phot_fname[80];//TODO
-
-
 };
 
 
@@ -99,9 +96,9 @@ struct BH_PrivateData
 {
 	short moduleNr;
 
-	char flimFileName[OSc_MAX_STR_LEN + 1]; // for saving the raw data to hard drive
+	char flimFileName[OScDev_MAX_STR_LEN + 1]; // for saving the raw data to hard drive
 
-	OSc_Setting **settings;
+	OScDev_Setting **settings;
 	size_t settingCount;
 
 	bool settingsChanged;
@@ -114,11 +111,6 @@ struct BH_PrivateData
 	struct AcqPrivateData acquisition;
 };
 
-
-static inline struct BH_PrivateData *GetData(OSc_Device *device)
-{
-	return (struct BH_PrivateData *)(device->implData);
-}
 
 typedef struct {
 	short revision;
@@ -398,6 +390,9 @@ typedef struct _MeasureInfo {
 }MeasureInfo;
 
 
+static inline struct BH_PrivateData *GetData(OScDev_Device *device)
+{
+	return (struct BH_PrivateData *)OScDev_Device_GetImplData(device);
+}
 
-
-OSc_Error BH_SPC150PrepareSettings(OSc_Device *device);
+OScDev_Error BH_SPC150PrepareSettings(OScDev_Device *device);
