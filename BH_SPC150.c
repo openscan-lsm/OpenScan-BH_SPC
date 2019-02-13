@@ -1306,8 +1306,25 @@ OScDev_Error BH_extractPhoton(void *param) {
 
 
 
-static OScDev_Error BH_ArmDetector(OScDev_Device *device, OScDev_Acquisition *acq)
+static OScDev_Error BH_Arm(OScDev_Device *device, OScDev_Acquisition *acq)
 {
+	bool useClock, useScanner, useDetector;
+	OScDev_Acquisition_IsClockRequested(acq, &useClock);
+	OScDev_Acquisition_IsScannerRequested(acq, &useScanner);
+	OScDev_Acquisition_IsDetectorRequested(acq, &useDetector);
+	if (useClock || useScanner || !useDetector)
+		return OScDev_Error_Unsupported_Operation;
+
+	enum OScDev_TriggerSource clockStartTriggerSource;
+	OScDev_Acquisition_GetClockStartTriggerSource(acq, &clockStartTriggerSource);
+	if (clockStartTriggerSource != OScDev_TriggerSource_Software)
+		return OScDev_Error_Unsupported_Operation;
+
+	enum OScDev_ClockSource clockSource;
+	OScDev_Acquisition_GetClockSource(acq, &clockSource);
+	if (clockSource != OScDev_ClockSource_External)
+		return OScDev_Error_Unsupported_Operation;
+
 	struct AcqPrivateData *privAcq = &(GetData(device)->acquisition);
 	EnterCriticalSection(&(privAcq->mutex));
 	{
@@ -1343,7 +1360,7 @@ unsigned short compute_checksum(void* hdr) {
 }
 
 
-static OScDev_Error BH_StartDetector(OScDev_Device *device, OScDev_Acquisition *acq)
+static OScDev_Error BH_Start(OScDev_Device *device)
 {
 	struct AcqPrivateData *privAcq = &(GetData(device)->acquisition);
 
@@ -1372,19 +1389,10 @@ static OScDev_Error BH_StartDetector(OScDev_Device *device, OScDev_Acquisition *
 	privAcq->thread = CreateThread(NULL, 0, BH_FIFO_Loop, device, 0, &id);
 
 	return OScDev_OK;
-
-	//test insert
-	//EnterCriticalSection(&(privAcq->mutex));
-	//privAcq->isRunning = true;
-	//privAcq->stopRequested = false;
-	//LeaveCriticalSection(&(privAcq->mutex));
-	//WakeAllConditionVariable(&(privAcq->acquisitionFinishCondition));
-
-	//return OScDev_Error_Unsupported_Operation;
 }
 
 
-static OScDev_Error BH_StopDetector(OScDev_Device *device, OScDev_Acquisition *acq)
+static OScDev_Error BH_Stop(OScDev_Device *device)
 {
 	EnterCriticalSection(&(GetData(device)->acquisition.mutex));
 	{
@@ -1446,9 +1454,9 @@ struct OScDev_DeviceImpl BH_TCSCP150_Device_Impl = {
 	.GetImageSize = BH_GetImageSize,
 	.GetNumberOfChannels = BH_GetNumberOfChannels,
 	.GetBytesPerSample = BH_GetBytesPerSample,
-	.ArmDetector = BH_ArmDetector,
-	.StartDetector = BH_StartDetector,
-	.StopDetector = BH_StopDetector,
+	.Arm = BH_Arm,
+	.Start = BH_Start,
+	.Stop = BH_Stop,
 	.IsRunning = BH_IsRunning,
 	.Wait = BH_Wait,
 };
