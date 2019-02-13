@@ -290,6 +290,13 @@ static OScDev_Error BH_HasDetector(OScDev_Device *device, bool *hasDetector)
 }
 
 
+static OScDev_Error BH_HasClock (OScDev_Device *device, bool *hasDetector)
+{
+	*hasDetector = false;
+	return OScDev_OK;
+}
+
+
 static OScDev_Error BH_GetSettings(OScDev_Device *device, OScDev_Setting ***settings, size_t *count)
 {
 	OScDev_Error err;
@@ -1305,7 +1312,6 @@ OScDev_Error BH_extractPhoton(void *param) {
 }
 
 
-
 static OScDev_Error BH_Arm(OScDev_Device *device, OScDev_Acquisition *acq)
 {
 	bool useClock, useScanner, useDetector;
@@ -1313,11 +1319,6 @@ static OScDev_Error BH_Arm(OScDev_Device *device, OScDev_Acquisition *acq)
 	OScDev_Acquisition_IsScannerRequested(acq, &useScanner);
 	OScDev_Acquisition_IsDetectorRequested(acq, &useDetector);
 	if (useClock || useScanner || !useDetector)
-		return OScDev_Error_Unsupported_Operation;
-
-	enum OScDev_TriggerSource clockStartTriggerSource;
-	OScDev_Acquisition_GetClockStartTriggerSource(acq, &clockStartTriggerSource);
-	if (clockStartTriggerSource != OScDev_TriggerSource_Software)
 		return OScDev_Error_Unsupported_Operation;
 
 	enum OScDev_ClockSource clockSource;
@@ -1342,6 +1343,8 @@ static OScDev_Error BH_Arm(OScDev_Device *device, OScDev_Acquisition *acq)
 	}
 	LeaveCriticalSection(&(privAcq->mutex));
 
+	OScDev_Log_Debug(device, "FLIM armed");
+
 	return OScDev_OK;
 }
 
@@ -1362,6 +1365,7 @@ unsigned short compute_checksum(void* hdr) {
 
 static OScDev_Error BH_Start(OScDev_Device *device)
 {
+	OScDev_Log_Debug(device, "Starting FLIM...");
 	struct AcqPrivateData *privAcq = &(GetData(device)->acquisition);
 
 	EnterCriticalSection(&(privAcq->mutex));
@@ -1447,6 +1451,7 @@ struct OScDev_DeviceImpl BH_TCSCP150_Device_Impl = {
 	.Close = BH_Close,
 	.HasScanner = BH_HasScanner,
 	.HasDetector = BH_HasDetector,
+	.HasClock = BH_HasClock,
 	.GetSettings = BH_GetSettings,
 	.GetAllowedResolutions = BH_GetAllowedResolutions,
 	.GetResolution = BH_GetResolution,
