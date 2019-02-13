@@ -1339,9 +1339,17 @@ static OScDev_Error BH_Arm(OScDev_Device *device, OScDev_Acquisition *acq)
 		}
 		privAcq->stopRequested = false;
 		privAcq->isRunning = true;
-		privAcq->started = false;
+		privAcq->started = GetData(device)->flimStarted;  // only true if user set flimStarted to True
 	}
 	LeaveCriticalSection(&(privAcq->mutex));
+
+	short moduleNr = GetData(device)->moduleNr;
+	short state;
+	SPC_test_state(moduleNr, &state);
+
+	DWORD id;
+	// FLIm acquisition thread
+	privAcq->thread = CreateThread(NULL, 0, BH_FIFO_Loop, device, 0, &id);
 
 	OScDev_Log_Debug(device, "FLIM armed");
 
@@ -1365,33 +1373,7 @@ unsigned short compute_checksum(void* hdr) {
 
 static OScDev_Error BH_Start(OScDev_Device *device)
 {
-	OScDev_Log_Debug(device, "Starting FLIM...");
-	struct AcqPrivateData *privAcq = &(GetData(device)->acquisition);
-
-	EnterCriticalSection(&(privAcq->mutex));
-	{
-		if (!(privAcq->isRunning))
-		{
-			LeaveCriticalSection(&(privAcq->mutex));
-			return OScDev_Error_Not_Armed;
-		}
-		if (privAcq->started)
-		{
-			LeaveCriticalSection(&(privAcq->mutex));
-			return OScDev_Error_Acquisition_Running;
-		}
-		privAcq->started = GetData(device)->flimStarted;  // only true if user set flimStarted to True
-	}
-	LeaveCriticalSection(&(privAcq->mutex));
-
-	short moduleNr = GetData(device)->moduleNr;
-	short state;
-	SPC_test_state(moduleNr, &state);
-
-	DWORD id;
-	// FLIm acquisition thread
-	privAcq->thread = CreateThread(NULL, 0, BH_FIFO_Loop, device, 0, &id);
-
+	// FLIM detector doesn't support this operation
 	return OScDev_OK;
 }
 
