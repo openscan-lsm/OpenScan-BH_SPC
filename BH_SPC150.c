@@ -525,11 +525,6 @@ static DWORD WINAPI BH_FIFO_Loop(void *param)
 
 	int max_buff_reached = 0;
 
-	//for (int i = 0; i < 512; i++) {
-	//	for (int j = 0; j < 512; j++) {
-	//		LTmatrix[i][j] = 0;
-	//	}
-	//}
 	unsigned long lineFrameMacroTime = 0;
 	int countprev = 0;
 	int linCount = 0;
@@ -846,9 +841,9 @@ OScDev_Error BH_LTDataSave(void *param)
 	PhotStreamInfo stream_info;
 	PhotInfo   phot_info;
 
-	//for live display or intensity image
-	//unsigned short  LTmatrix[512][512];//why is this line creating problem //issue
-
+	// Intensity image
+	unsigned short *LTmatrix = malloc(512 * 512 * sizeof(unsigned short));
+	memset(LTmatrix, 0, sizeof(LTmatrix));
 
 	int flagFreeBuff = 1;//1- empty
 	int stream_type = BH_STREAM;
@@ -864,11 +859,6 @@ OScDev_Error BH_LTDataSave(void *param)
 	int ret = 0;
 	unsigned int loc = 0;
 
-	for (short i = 0; i < 512; i++) {
-		for (short j = 0; j < 512; j++) {
-			//LTmatrix[i][j] = 0; //issue
-		}
-	}
 	//"testExternalPxl_5us.spc"
 	acq->streamHandle = SPC_init_phot_stream(acq->fifo_type, acq->phot_fname, 1, stream_type, what_to_read);
 	//acq->streamHandle = SPC_init_phot_stream(acq->fifo_type, "testExternalPxl_5us.spc", 1, stream_type, what_to_read);
@@ -1110,7 +1100,7 @@ OScDev_Error BH_LTDataSave(void *param)
 			float ratio = (float)pixelsPerLine / ((float)(borderLimit - startExcludePixel));
 			int locPix = (int)((tempPix - (float)startExcludePixel)*ratio);
 
-			//LTmatrix[tempLin][locPix]++;//intensity photon counting image //issue
+			LTmatrix[tempLin * 512 + locPix]++;
 
 										//microtime calculcation/// no change needed for resolution change
 			float tempLoc = (float)phot_info.micro_time * 256 / 4000;
@@ -1132,16 +1122,14 @@ OScDev_Error BH_LTDataSave(void *param)
 		SPC_get_phot_stream_info(acq->streamHandle, &stream_info);
 		// - at the end close the opened stream
 		SPC_close_phot_stream(acq->streamHandle);
-
-		int max = -10;
-		for (short i = 0; i < 512; i++) {
-			for (short j = 0; j < 512; j++) {
-				//if (LTmatrix[i][j]>max) {
-					//LTmatrix[i][j] = LTmatrix[i][j] / 4; //4 divided for normalization, will not be needed for OpenFLIM//issue
-				//}
-			}
-		}
 	}
+
+	// Temporary: send the total intensity image. A correct
+	// implementation would send an intensity image for every frame scanned.
+	OScDev_Log_Debug(device, "Sending intensity image...");
+	OScDev_Acquisition_CallFrameCallback(acq->acquisition, 0, LTmatrix);
+	free(LTmatrix);
+	OScDev_Log_Debug(device, "Sent intensity image");
 
 	sdt_file_header dest_header;
 	//CFile dest_file;
@@ -1180,6 +1168,8 @@ OScDev_Error BH_LTDataSave(void *param)
 	/* addition ends */
 	free(iPhotonCountBuffer);
 	flagFreeBuff = 1;//emptied//needed when save button is implemented
+
+	OScDev_Log_Debug(device, "Finished writing SDT file");
 
     // indicate the status of FLIM acquisition
 	GetData(device)->flimDone = true;
@@ -1339,6 +1329,7 @@ static OScDev_Error BH_Arm(OScDev_Device *device, OScDev_Acquisition *acq)
 		}
 		privAcq->stopRequested = false;
 		privAcq->isRunning = true;
+		privAcq->acquisition = acq;
 		privAcq->started = GetData(device)->flimStarted;  // only true if user set flimStarted to True
 	}
 	LeaveCriticalSection(&(privAcq->mutex));
