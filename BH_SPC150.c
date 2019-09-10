@@ -993,21 +993,21 @@ OScDev_Error BH_LTDataSave(void *param)
 	block_header.block_length = fileHeader.data_block_length;
 
 	unsigned histogramImageSizeBytes = pixelsPerLine * linesPerFrame * (1 << adcResolutionBits) * sizeof(uint16_t);
-	uint16_t *histogramImage = malloc(histogramImageSizeBytes);
+	uint16_t *histogramImage = calloc(1, histogramImageSizeBytes);
 	if (histogramImage == NULL) {
 		return OScDev_Error_Unknown;
 	}
-	memset(histogramImage, 0, histogramImageSizeBytes);
 
-	PhotStreamInfo stream_info; // TODO Is this ever used?
+	// FIXME Size shouldn't be hard-coded
+	unsigned intensityImageSizeBytes = 256 * 256 * sizeof(uint16_t);
+	uint16_t *intensityImage = calloc(1, intensityImageSizeBytes);
 
-	// FIXME Size shouldn't be hard-coded (and is wrong)
-	uint16_t *intensityImage = malloc(512 * 512 * sizeof(uint16_t));
-	memset(intensityImage, 0, sizeof(intensityImage)); // FIXME wrong size
+	PhotStreamInfo unusedStreamInfo;
 
 	int ret = 0;
 	if (acq->streamHandle >= 0) {
-		SPC_get_phot_stream_info(acq->streamHandle, &stream_info); // TODO Not used?
+		// Read stream info to skip
+		SPC_get_phot_stream_info(acq->streamHandle, &unusedStreamInfo);
 
 		int frameCount = 0;
 
@@ -1019,10 +1019,8 @@ OScDev_Error BH_LTDataSave(void *param)
 
 		unsigned long lineFrameMacroTime;
 
-		while (!ret) {  // untill error ( for example end of file )
-						// user must provide safety way out from this loop 
-						// fill phot_info structure with subsequent photons information
-			PhotInfo   phot_info;
+		while (!ret) { // untill error (for example end of file)
+			PhotInfo phot_info;
 			ret = SPC_get_photon(acq->streamHandle, &phot_info);
 
 			if (phot_info.flags & F_MARK) {
@@ -1054,8 +1052,8 @@ OScDev_Error BH_LTDataSave(void *param)
 			int tempLin = (int)(linNoTemp > (pixelsPerLine - 1) ?
 				(pixelsPerLine - 1) :
 				linNoTemp);
-			// FIXME 512 is wrong! Avoid hard-coding
-			intensityImage[tempLin * 512 + locPix]++;
+			// FIXME Avoid hard-coding
+			intensityImage[tempLin * 256 + locPix]++;
 
 			unsigned histoBinsPerPixel = 1 << adcResolutionBits;
 
@@ -1073,7 +1071,10 @@ OScDev_Error BH_LTDataSave(void *param)
 				locPix * histoBinsPerPixel +
 				loc]++;
 		}
-		SPC_get_phot_stream_info(acq->streamHandle, &stream_info);
+
+		// Read stream info to skip
+		SPC_get_phot_stream_info(acq->streamHandle, &unusedStreamInfo);
+
 		// - at the end close the opened stream
 		SPC_close_phot_stream(acq->streamHandle);
 	}
