@@ -842,18 +842,11 @@ OScDev_Error SaveHistogramAndIntensityImage(void *param)
 	SPCdata parameters;
 	SPC_get_parameters(MODULE, &parameters);
 
-	// TODO This probably shouldn't be hard-coded
-	const int adcResolutionBits = 8;
+	const int histoResolutionBits = 8;
 
 	// TODO Size should be variable
-	int factorforSize = 2;
-	int sizeinPixel = 512 / factorforSize;
-	int pixelsPerLine = sizeinPixel;
-	int linesPerFrame = sizeinPixel;
-
-	// TODO Why is it 327?
-	int pixelBeforeStart = 327 / factorforSize;
-	int pixelAfterStop = 2;
+	unsigned pixelsPerLine = 256;
+	unsigned linesPerFrame = 256;
 	
 	SYSTEMTIME st;
 	GetSystemTime(&st);
@@ -866,14 +859,14 @@ OScDev_Error SaveHistogramAndIntensityImage(void *param)
 	int fileInfoLength = sprintf_s(fileInfoString, 512,
 		"*IDENTIFICATION\r\n"
 		"ID : SPC Setup & Data File\r\n"
-		"Title : sagartest\r\n"
+		"Title : OpenScan\r\n"
 		"Version : 1  781 M\r\n"
-		"Revision : %d bits ADC\r\n"
+		"Revision : %d-bit histogram\r\n"
 		"Date : %s\r\n"
 		"Time : %s\r\n"
 		"*END\r\n"
 		"\r\n",
-		adcResolutionBits, date, time);
+		histoResolutionBits, date, time);
 
 	//TODO might have to add more here to comply with new file format
 	char setupString[] =
@@ -894,7 +887,7 @@ OScDev_Error SaveHistogramAndIntensityImage(void *param)
 	fileHeader.meas_desc_block_length = sizeof(MeasureInfo);
 	fileHeader.no_of_meas_desc_blocks = 1;
 	fileHeader.data_block_offs = fileHeader.meas_desc_block_offs + fileHeader.meas_desc_block_length * fileHeader.no_of_meas_desc_blocks;
-	fileHeader.data_block_length = pixelsPerLine * linesPerFrame * (1 << adcResolutionBits) * sizeof(short);
+	fileHeader.data_block_length = pixelsPerLine * linesPerFrame * (1 << histoResolutionBits) * sizeof(short);
 	fileHeader.no_of_data_blocks = 1;
 	fileHeader.header_valid = BH_HEADER_VALID;
 	fileHeader.reserved1 = fileHeader.no_of_data_blocks;
@@ -922,7 +915,7 @@ OScDev_Error SaveHistogramAndIntensityImage(void *param)
 	meas_desc.tac_of = parameters.tac_offset;
 	meas_desc.tac_ll = parameters.tac_limit_low;
 	meas_desc.tac_lh = parameters.tac_limit_high;
-	meas_desc.adc_re = 1 << (parameters.adc_resolution - 4); //goal is to make it 8 //1 << parameters.adc_resolution; //should be default
+	meas_desc.adc_re = 1 << histoResolutionBits;
 	meas_desc.eal_de = parameters.ext_latch_delay;
 	meas_desc.ncx = 1;  //not sure what these three do, they were hardcoded to 1's in WiscScan
 	meas_desc.ncy = 1;
@@ -991,7 +984,7 @@ OScDev_Error SaveHistogramAndIntensityImage(void *param)
 	block_header.lblock_no = ((MODULE & 3) << 24);
 	block_header.block_length = fileHeader.data_block_length;
 
-	unsigned histogramImageSizeBytes = pixelsPerLine * linesPerFrame * (1 << adcResolutionBits) * sizeof(uint16_t);
+	unsigned histogramImageSizeBytes = pixelsPerLine * linesPerFrame * (1 << histoResolutionBits) * sizeof(uint16_t);
 	uint16_t *histogramImage = calloc(1, histogramImageSizeBytes);
 	if (histogramImage == NULL) {
 		return OScDev_Error_Unknown;
@@ -1008,73 +1001,83 @@ OScDev_Error SaveHistogramAndIntensityImage(void *param)
 		// Read stream info to skip
 		SPC_get_phot_stream_info(acq->streamHandle, &unusedStreamInfo);
 
-		int frameCount = 0;
+		unsigned frameIndex = 0;
+		unsigned lineIndex = 0;
+		bool firstLineMarkOfFrameSeen = false;
 
-		// TODO Avoid float
-		float linCount = 0;
-
-		// TODO Why 340? (This is pixel dwell time so needs to scale with scanning)
-		int pixelTime = 340; // This is in terms of macro time
-
-		unsigned long lineFrameMacroTime;
+		uint64_t lineMarkMacroTime; // Units depend on SPC setting and model
 
 		while (!ret) { // untill error (for example end of file)
-			PhotInfo phot_info;
-			ret = SPC_get_photon(acq->streamHandle, &phot_info);
+			PhotInfo64 phot_info;
+			ret = SPC_get_photon(acq->streamHandle, (PhotInfo *)&phot_info);
 
 			if (phot_info.flags & F_MARK) {
-				frameCount++;
-				linCount = 0;
+				frameIndex++;
+				lineIndex = 0;
+				firstLineMarkOfFrameSeen = false;
 			}
 
 			if (phot_info.flags & L_MARK) {
-				lineFrameMacroTime = phot_info.mtime_lo;
-				linCount++;
+				lineMarkMacroTime = phot_info.mtime;
+
+				// We do not increment lineIndex on the first line mark of
+				// the frame, because that is the start of line 0.
+				if (firstLineMarkOfFrameSeen) {
+					lineIndex++;
+				}
+				else {
+					firstLineMarkOfFrameSeen = true;
+				}
 			}
 
-			if (frameCount < 2)
-				continue;
-
-			float linNoTemp = linCount;
-
-			unsigned long relativeMacroTime = phot_info.mtime_lo - lineFrameMacroTime; // relative macro time compared to start of line
-
-			float tempPix = (float)relativeMacroTime / (float)pixelTime; // location in one line, given the pixel time
-
-			if (tempPix > pixelBeforeStart || tempPix < pixelAfterStop) {
+			if (phot_info.flags & NOT_PHOTON) {
 				continue;
 			}
 
-			float ratio = (float)pixelsPerLine / ((float)(pixelBeforeStart - pixelAfterStop));
-			int locPix = (int)((tempPix - (float)pixelAfterStop)*ratio);
+			// The first frame may be incomplete, so discard
+			// The second frame may contain ghosting (TODO does it?)
+			if (frameIndex < 2)
+				continue;
 
-			int tempLin = (int)(linNoTemp > (pixelsPerLine - 1) ?
-				(pixelsPerLine - 1) :
-				linNoTemp);
-			// FIXME Avoid hard-coding
-			intensityImage[tempLin * 256 + locPix]++;
-
-			unsigned histoBinsPerPixel = 1 << adcResolutionBits;
-
-			// TODO Why divide by 4000? If micro_time is in ADC units, we should use it as is
-			// Possibly the correct conversion is a right shift by (12 - adcResolutionBits).
-			float tempLoc = (float)phot_info.micro_time * histoBinsPerPixel / 4000;
-			if (tempLoc == 0) {
+			if (lineIndex >= linesPerFrame) {
+				// Detected more lines than expected; probably should report an error.
 				continue;
 			}
-			// TODO Use ceil, floor, or round
-			int loc = (int)tempLoc;
+
+			uint64_t macroTimeSinceLineMark = phot_info.mtime - lineMarkMacroTime;
+
+			// Map macro time to pixel index within line
+			// TODO These should not be hard coded!
+			uint64_t lineDelayMacroTime = 400; // Adjustable setting
+			uint64_t lineDurationMacroTime = 5 * 256 * 40; // pixelTimeUs * pixelsPerLine * macroTimeTicksPerUs
+
+			if (macroTimeSinceLineMark < lineDelayMacroTime) {
+				continue; // Before line starts
+			}
+
+			uint64_t pixelIndex = (pixelsPerLine - 1) * (macroTimeSinceLineMark - lineDelayMacroTime) / lineDurationMacroTime;
+
+			if (pixelIndex >= pixelsPerLine) {
+				continue; // During retrace
+			}
+
+			unsigned histoBinsPerPixel = 1 << histoResolutionBits;
+
+			uint16_t microTime = phot_info.micro_time; // 0-4095 for SPC150
+			uint16_t histoBinIndex = microTime >> (12 - histoResolutionBits);
+
+			intensityImage[lineIndex * pixelsPerLine + pixelIndex]++;
 
 			histogramImage[
-				tempLin * pixelsPerLine * histoBinsPerPixel +
-				locPix * histoBinsPerPixel +
-				loc]++;
+				lineIndex * pixelsPerLine * histoBinsPerPixel +
+				pixelIndex * histoBinsPerPixel +
+				histoBinIndex]++;
 		}
 
+		// TODO Not needed?
 		// Read stream info to skip
 		SPC_get_phot_stream_info(acq->streamHandle, &unusedStreamInfo);
 
-		// - at the end close the opened stream
 		SPC_close_phot_stream(acq->streamHandle);
 	}
 
@@ -1082,27 +1085,27 @@ OScDev_Error SaveHistogramAndIntensityImage(void *param)
 	// implementation would send an intensity image for every frame scanned.
 	OScDev_Log_Debug(device, "Sending intensity image...");
 	OScDev_Acquisition_CallFrameCallback(acq->acquisition, 0, intensityImage);
-	free(intensityImage);
 	OScDev_Log_Debug(device, "Sent intensity image");
 
-	char dest_filename[500];
-	sprintf_s(dest_filename, sizeof(dest_filename), GetData(device)->flimFileName);
-	strcat_s(dest_filename, sizeof(dest_filename), ".sdt");
+	char sdtFilename[500];
+	sprintf_s(sdtFilename, sizeof(sdtFilename), GetData(device)->flimFileName);
+	strcat_s(sdtFilename, sizeof(sdtFilename), ".sdt");
 
-	FILE* headerFile;
-	fopen_s(&headerFile, dest_filename, "wb");
-	if (headerFile == NULL)
+	FILE* sdtFile;
+	fopen_s(&sdtFile, sdtFilename, "wb");
+	if (sdtFile == NULL)
 		return 0;
 
-	ret = fwrite(&fileHeader, sizeof(sdt_file_header), 1, headerFile);  //Write Header Block
-	ret = fwrite(fileInfoString, fileInfoLength, 1, headerFile);  // Write File Info Block
-	ret = fwrite(setupString, setupLength, 1, headerFile);  // Write Setup Block
-	ret = fwrite(&meas_desc, sizeof(MeasureInfo), 1, headerFile);  //Write Measurement Description Block
-	ret = fwrite(&block_header, sizeof(data_block_header), 1, headerFile);  //Write Data Block Header
-	ret = fwrite(histogramImage, sizeof(short), histogramImageSizeBytes / sizeof(short), headerFile);
+	ret = fwrite(&fileHeader, sizeof(sdt_file_header), 1, sdtFile);  //Write Header Block
+	ret = fwrite(fileInfoString, fileInfoLength, 1, sdtFile);  // Write File Info Block
+	ret = fwrite(setupString, setupLength, 1, sdtFile);  // Write Setup Block
+	ret = fwrite(&meas_desc, sizeof(MeasureInfo), 1, sdtFile);  //Write Measurement Description Block
+	ret = fwrite(&block_header, sizeof(data_block_header), 1, sdtFile);  //Write Data Block Header
+	ret = fwrite(histogramImage, sizeof(short), histogramImageSizeBytes / sizeof(short), sdtFile);
 
-	fclose(headerFile);
+	fclose(sdtFile);
 
+	free(intensityImage);
 	free(histogramImage);
 
 	OScDev_Log_Debug(device, "Finished writing SDT file");
