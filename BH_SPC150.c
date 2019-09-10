@@ -2,7 +2,8 @@
 #include "BH_SPC150Private.h"
 
 #include <stdio.h>
-#pragma once
+#include <stdint.h>
+
 #pragma pack(1)
 
 static bool g_BH_initialized = false;
@@ -827,103 +828,82 @@ OScDev_Error BH_LTDataSave(void *param)
 {
 	OScDev_Device *device = (OScDev_Device *)param;
 	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
-	///uint32_t collectionTime = GetData(device)->acqTime; //get collection time
-	//SPC_save_data_to_sdtfile(-1, acq->buffer, 50000, "testSDT.sdt"); // cannot run on mode=5
 
-	char file_info[512];
-	short setup_length;
-	char setup[32];
-	bhfile_header header;
-	MeasureInfo meas_desc;
-	BHFileBlockHeader block_header;
-	unsigned int iPhotonCountBufferSize;
-	short *iPhotonCountBuffer;//should be void*, but works in wiscScan
-	PhotStreamInfo stream_info;
-	PhotInfo   phot_info;
+	// Note: We cannot use SPC_save_data_to_sdtfile() cannot be used in FIFO Image mode
 
-	// Intensity image
-	unsigned short *LTmatrix = malloc(512 * 512 * sizeof(unsigned short));
-	memset(LTmatrix, 0, sizeof(LTmatrix));
-
-	int flagFreeBuff = 1;//1- empty
 	int stream_type = BH_STREAM;
-
 	int what_to_read = 1;   // valid photons
 	if (acq->fifo_type == FIFO_IMG) {
 		stream_type |= MARK_STREAM;
 		what_to_read |= (0x4 | 0x8 | 0x10);   // also pixel, line, frame markers possible
 	}
 
-
-	
-	int ret = 0;
-	unsigned int loc = 0;
-
-	//"testExternalPxl_5us.spc"
 	acq->streamHandle = SPC_init_phot_stream(acq->fifo_type, acq->phot_fname, 1, stream_type, what_to_read);
-	//acq->streamHandle = SPC_init_phot_stream(acq->fifo_type, "testExternalPxl_5us.spc", 1, stream_type, what_to_read);
 
 	SPCdata parameters;
-	SPC_get_parameters(MODULE, &parameters);//
+	SPC_get_parameters(MODULE, &parameters);
 
+	// TODO This probably shouldn't be hard-coded
+	const int adcResolutionBits = 8;
 
-
-	int FLIM_ADCResolution = 8;
-
-	///size change start///////
-	int factorforSize =2;
-
-
+	// TODO Size should be variable
+	int factorforSize = 2;
 	int sizeinPixel = 512 / factorforSize;
 	int pixelsPerLine = sizeinPixel;
 	int linesPerFrame = sizeinPixel;
-	int pixlimit = 327;//327 originally
-	int borderLimit = pixlimit / factorforSize;//327 originally
-	int startExcludePixel = 2;
-	
-	//working code ends
 
-	///end test block
+	// TODO Why is it 327?
+	int pixelBeforeStart = 327 / factorforSize;
+	int pixelAfterStop = 2;
+	
 	SYSTEMTIME st;
 	GetSystemTime(&st);
-
 	char date[11];
 	sprintf_s(date, 11, "%02d:%02d:%04d", st.wMonth, st.wDay, st.wYear);
 	char time[9];
 	sprintf_s(time, 9, "%02d:%02d:%02d", st.wHour, st.wMinute, st.wSecond);
-	int file_info_length = sprintf_s(file_info, 512, "*IDENTIFICATION\r\nID : SPC Setup & Data File\r\nTitle : sagartest\r\nVersion : 1  781 M\r\nRevision : %d bits ADC\r\nDate : %s\r\nTime : %s\r\n*END\r\n\r\n", FLIM_ADCResolution, date, time);
 
-	// Create Setup Block
-	//char setup[32];
-	setup_length = sprintf_s(setup, 32, "*SETUP\r\n*END\r\n\r\n");
+	char fileInfoString[512];
+	int fileInfoLength = sprintf_s(fileInfoString, 512,
+		"*IDENTIFICATION\r\n"
+		"ID : SPC Setup & Data File\r\n"
+		"Title : sagartest\r\n"
+		"Version : 1  781 M\r\n"
+		"Revision : %d bits ADC\r\n"
+		"Date : %s\r\n"
+		"Time : %s\r\n"
+		"*END\r\n"
+		"\r\n",
+		adcResolutionBits, date, time);
+
 	//TODO might have to add more here to comply with new file format
-
-	// Create Header Block
+	char setupString[] =
+		"*SETUP\r\n"
+		"*END\r\n"
+		"\r\n";
+	unsigned setupLength = strlen(setupString);
 
 	short moduleType = SPC_test_id(MODULE);
-	header.revision = (0x28 << 4)  ;
 
-	
-	header.info_offs = sizeof(sdt_file_header);
-	header.info_length = file_info_length;
-	header.setup_offs = header.info_offs + header.info_length;
-	header.setup_length = setup_length;
-	header.meas_desc_block_offs = header.setup_offs + header.setup_length;
-	header.meas_desc_block_length = sizeof(MeasureInfo);
-	header.no_of_meas_desc_blocks = 1;
-	header.data_block_offs = header.meas_desc_block_offs + header.meas_desc_block_length * header.no_of_meas_desc_blocks;
-
-	//header.data_block_length = SP->pixelsPerLine * SP->linesPerFrame * (1 << SP->FLIM_ADCResolution) * sizeof(short);  //*MJF 7/25/13 'numChannels' -> 'SP->nChannels'
-	header.data_block_length = pixelsPerLine * linesPerFrame * (1 << FLIM_ADCResolution) * sizeof(short);  
-	header.no_of_data_blocks = 1;
-	header.header_valid = BH_HEADER_VALID;
-	header.reserved1 = header.no_of_data_blocks;
-	header.reserved2 = 0;
-	header.chksum = compute_checksum(&header);
-
+	sdt_file_header fileHeader;
+	fileHeader.revision = 0x28 << 4;
+	fileHeader.info_offs = sizeof(sdt_file_header);
+	fileHeader.info_length = fileInfoLength;
+	fileHeader.setup_offs = fileHeader.info_offs + fileHeader.info_length;
+	fileHeader.setup_length = setupLength;
+	fileHeader.meas_desc_block_offs = fileHeader.setup_offs + fileHeader.setup_length;
+	fileHeader.meas_desc_block_length = sizeof(MeasureInfo);
+	fileHeader.no_of_meas_desc_blocks = 1;
+	fileHeader.data_block_offs = fileHeader.meas_desc_block_offs + fileHeader.meas_desc_block_length * fileHeader.no_of_meas_desc_blocks;
+	fileHeader.data_block_length = pixelsPerLine * linesPerFrame * (1 << adcResolutionBits) * sizeof(short);
+	fileHeader.no_of_data_blocks = 1;
+	fileHeader.header_valid = BH_HEADER_VALID;
+	fileHeader.reserved1 = fileHeader.no_of_data_blocks;
+	fileHeader.reserved2 = 0;
+	fileHeader.chksum = compute_checksum(&fileHeader);
 
 	// Create Measurement Description Block
-	//MeasureInfo meas_desc;
+	MeasureInfo meas_desc;
 	strcpy_s(meas_desc.time, 9, time);
 	strcpy_s(meas_desc.date, 11, date);
 	SPC_EEP_Data eepromContents;
@@ -1001,123 +981,97 @@ OScDev_Error BH_LTDataSave(void *param)
 	meas_desc.dig_flags = parameters.master_clock;
 
 	// Create Data Block Header
-	//BHFileBlockHeader block_header;
+	BHFileBlockHeader block_header;
 	block_header.lblock_no = 1;
-	block_header.data_offs = header.data_block_offs + sizeof(BHFileBlockHeader);
-	block_header.next_block_offs = block_header.data_offs + header.data_block_length;
+	block_header.data_offs = fileHeader.data_block_offs + sizeof(BHFileBlockHeader);
+	block_header.next_block_offs = block_header.data_offs + fileHeader.data_block_length;
 
 	block_header.block_type = MEAS_DATA_FROM_FILE | PAGE_BLOCK;//this one works for our case
 																   //block_header.block_type = 1;
 	block_header.meas_desc_block_no = 0;
 	block_header.lblock_no = ((MODULE & 3) << 24);
-	block_header.block_length = header.data_block_length;
+	block_header.block_length = fileHeader.data_block_length;
 
-	iPhotonCountBufferSize = pixelsPerLine * linesPerFrame * (1 << FLIM_ADCResolution) * sizeof(short);//this size should be dynamically allocated in the future
-																									   //short *iPhotonCountBuffer;//should be void*
-	iPhotonCountBuffer = (short*)malloc(iPhotonCountBufferSize);
-	if (iPhotonCountBuffer == NULL) {
-		return OScDev_Error_Unknown; //TODO: OScDev_Error_SPC150_Buffer_Empty;
+	unsigned histogramImageSizeBytes = pixelsPerLine * linesPerFrame * (1 << adcResolutionBits) * sizeof(uint16_t);
+	uint16_t *histogramImage = malloc(histogramImageSizeBytes);
+	if (histogramImage == NULL) {
+		return OScDev_Error_Unknown;
 	}
+	memset(histogramImage, 0, histogramImageSizeBytes);
 
-	flagFreeBuff = 0;//0- indicates buffer is full//1 indicates empty
-	memset(iPhotonCountBuffer, 0, iPhotonCountBufferSize);
+	PhotStreamInfo stream_info; // TODO Is this ever used?
 
-	 
+	// FIXME Size shouldn't be hard-coded (and is wrong)
+	uint16_t *intensityImage = malloc(512 * 512 * sizeof(uint16_t));
+	memset(intensityImage, 0, sizeof(intensityImage)); // FIXME wrong size
+
+	int ret = 0;
 	if (acq->streamHandle >= 0) {
-		// 2. in every moment of extracting current stream state can be checked
-		SPC_get_phot_stream_info(acq->streamHandle, &stream_info);
+		SPC_get_phot_stream_info(acq->streamHandle, &stream_info); // TODO Not used?
 
-		ret = 0;
-
-		int lineCount = 0;
 		int frameCount = 0;
-		unsigned int max_microtime = 0;
-		unsigned int max_macroimeLow = 0;
-		unsigned int max_macrotimehi = 0;
-		int histogram[256];//zero init TODO
-		unsigned int prevvalue = 0;
-		unsigned long prevvalueFrameMacro = 0;
-		unsigned long prevvalueLineMacro = 0;
-		int diffCOuntLine = 0;
-		int difffcountFrame = 0;
 
-		int countprev = 0;
+		// TODO Avoid float
 		float linCount = 0;
-		int pixCount = 0;
-		int pixelTime = 340;//This is in terms of macro time
-		int prevLinChk = 0;
+
+		// TODO Why 340? (This is pixel dwell time so needs to scale with scanning)
+		int pixelTime = 340; // This is in terms of macro time
+
 		unsigned long lineFrameMacroTime;
-		int flagWrongFrame = 0;
-
-		int missedphoton = 0;
-		int countedphoton = 0;
-		int NonZeroCount = 0;
-		int ZeroCount = 0;
-
 
 		while (!ret) {  // untill error ( for example end of file )
 						// user must provide safety way out from this loop 
 						// fill phot_info structure with subsequent photons information
+			PhotInfo   phot_info;
 			ret = SPC_get_photon(acq->streamHandle, &phot_info);
-			// save it somewhere
-
-			int tempLin = 0;//tempLin is temp line position
-
-
 
 			if (phot_info.flags & F_MARK) {
 				frameCount++;
 				linCount = 0;
-
 			}
 
 			if (phot_info.flags & L_MARK) {
-
 				lineFrameMacroTime = phot_info.mtime_lo;
 				linCount++;
-
 			}
 
-			if (frameCount<2) continue;
-			float linNoTemp = linCount;// / ((float)factorforSize);
-			tempLin = (int)(linNoTemp>(pixelsPerLine - 1) ? (pixelsPerLine - 1) : linNoTemp);  //check limit
+			if (frameCount < 2)
+				continue;
 
-																							   //the following line should be upgraded to 64bit code in case this does not work
-			unsigned long relativeMacroTime = phot_info.mtime_lo - lineFrameMacroTime;//relative macro time compared to start of line
+			float linNoTemp = linCount;
 
-			float tempPix = (float)relativeMacroTime / ((float)pixelTime);//location in one line, given the pixel time
+			unsigned long relativeMacroTime = phot_info.mtime_lo - lineFrameMacroTime; // relative macro time compared to start of line
 
+			float tempPix = (float)relativeMacroTime / (float)pixelTime; // location in one line, given the pixel time
 
-			//tempPix = tempPix / ((float)factorforSize);//resolution change
-
-			if (tempPix > borderLimit | tempPix < startExcludePixel) {
-				missedphoton++;
+			if (tempPix > pixelBeforeStart || tempPix < pixelAfterStop) {
 				continue;
 			}
 
-			//if (tempPix>borderLimit | tempPix<startExcludePixel) continue;
-			//int locPix=(int)(tempPix>borderLimit?borderLimit:tempPix);//location in a row
-			float ratio = (float)pixelsPerLine / ((float)(borderLimit - startExcludePixel));
-			int locPix = (int)((tempPix - (float)startExcludePixel)*ratio);
+			float ratio = (float)pixelsPerLine / ((float)(pixelBeforeStart - pixelAfterStop));
+			int locPix = (int)((tempPix - (float)pixelAfterStop)*ratio);
 
-			LTmatrix[tempLin * 512 + locPix]++;
+			int tempLin = (int)(linNoTemp > (pixelsPerLine - 1) ?
+				(pixelsPerLine - 1) :
+				linNoTemp);
+			// FIXME 512 is wrong! Avoid hard-coding
+			intensityImage[tempLin * 512 + locPix]++;
 
-										//microtime calculcation/// no change needed for resolution change
-			float tempLoc = (float)phot_info.micro_time * 256 / 4000;
+			unsigned histoBinsPerPixel = 1 << adcResolutionBits;
 
-			if (tempLoc == 0) {//better way to handle this, these are photons with no time lag from sync signal
-				//ZeroCount++;
+			// TODO Why divide by 4000? If micro_time is in ADC units, we should use it as is
+			// Possibly the correct conversion is a right shift by (12 - adcResolutionBits).
+			float tempLoc = (float)phot_info.micro_time * histoBinsPerPixel / 4000;
+			if (tempLoc == 0) {
 				continue;
 			}
-
+			// TODO Use ceil, floor, or round
 			int loc = (int)tempLoc;
 
-
-			histogram[loc]++;
-			///adding histogram to the buffer
-
-			iPhotonCountBuffer[(tempLin*pixelsPerLine*(1 << 8)) + ((locPix)*(1 << 8)) + loc]++;//crashes for locpix=-1[fixed];//this number 8 reperents 2^8 time bins, it should be 10 for 1024 level time bins 
-																							   //building  histogram
+			histogramImage[
+				tempLin * pixelsPerLine * histoBinsPerPixel +
+				locPix * histoBinsPerPixel +
+				loc]++;
 		}
 		SPC_get_phot_stream_info(acq->streamHandle, &stream_info);
 		// - at the end close the opened stream
@@ -1127,51 +1081,32 @@ OScDev_Error BH_LTDataSave(void *param)
 	// Temporary: send the total intensity image. A correct
 	// implementation would send an intensity image for every frame scanned.
 	OScDev_Log_Debug(device, "Sending intensity image...");
-	OScDev_Acquisition_CallFrameCallback(acq->acquisition, 0, LTmatrix);
-	free(LTmatrix);
+	OScDev_Acquisition_CallFrameCallback(acq->acquisition, 0, intensityImage);
+	free(intensityImage);
 	OScDev_Log_Debug(device, "Sent intensity image");
 
-	sdt_file_header dest_header;
-	//CFile dest_file;
-	data_block_header dest_dbh;
-	SYSTEMTIME now;
-
-	//default file
 	char dest_filename[500];
-//	sprintf_s(dest_filename, 500, "BH_data.sdt");//it was *.bin
-
-//	sprintf_s(dest_filename, 500, "trialCat");//it was *.bin
-
-	sprintf_s(dest_filename, 500, GetData(device)->flimFileName);//it was *.bin
-	strcat(dest_filename, ".sdt");
-
-	//GetData(device)->flimFileName;
-
+	sprintf_s(dest_filename, sizeof(dest_filename), GetData(device)->flimFileName);
+	strcat_s(dest_filename, sizeof(dest_filename), ".sdt");
 
 	FILE* headerFile;
-
 	fopen_s(&headerFile, dest_filename, "wb");
-	if (headerFile == NULL) return 0;
+	if (headerFile == NULL)
+		return 0;
 
-	//int ret;
-	ret = fwrite(&header, sizeof(bhfile_header), 1, headerFile);  //Write Header Block
-	ret = fwrite(file_info, file_info_length, 1, headerFile);  // Write File Info Block
-	ret = fwrite(setup, setup_length, 1, headerFile);  // Write Setup Block
+	ret = fwrite(&fileHeader, sizeof(sdt_file_header), 1, headerFile);  //Write Header Block
+	ret = fwrite(fileInfoString, fileInfoLength, 1, headerFile);  // Write File Info Block
+	ret = fwrite(setupString, setupLength, 1, headerFile);  // Write Setup Block
 	ret = fwrite(&meas_desc, sizeof(MeasureInfo), 1, headerFile);  //Write Measurement Description Block
 	ret = fwrite(&block_header, sizeof(data_block_header), 1, headerFile);  //Write Data Block Header
-	ret = fwrite(iPhotonCountBuffer, sizeof(short), iPhotonCountBufferSize / sizeof(short), headerFile);
+	ret = fwrite(histogramImage, sizeof(short), histogramImageSizeBytes / sizeof(short), headerFile);
 
 	fclose(headerFile);
 
-	//OScDev_Log_Debug(device, "User interruption for FooLoop...");
-
-	/* addition ends */
-	free(iPhotonCountBuffer);
-	flagFreeBuff = 1;//emptied//needed when save button is implemented
+	free(histogramImage);
 
 	OScDev_Log_Debug(device, "Finished writing SDT file");
 
-    // indicate the status of FLIM acquisition
 	GetData(device)->flimDone = true;
 
 	return OScDev_OK;

@@ -113,25 +113,6 @@ struct BH_PrivateData
 
 
 typedef struct {
-	short revision;
-	long info_offset;
-	short info_length;
-	long setup_offset;
-	short setup_length;
-	long data_block_offset;
-	short no_of_data_blocks;
-	long data_block_length;
-	long meas_desc_block_offset;
-	short no_of_meas_desc_blocks;
-	short meas_desc_block_length;
-	unsigned short header_valid;
-	unsigned long reserved1;
-	unsigned short reserved2;
-	unsigned short chksum;
-} sdt_file_header;
-
-//  1 - File header
-typedef struct {
 	short    revision;  // software revision & module identification
 						//   lowest bits 0-3 -   software revision ( >= 12(decimal))
 						//        current value = 15 - support for huge data blocks >128MB <= 2GB
@@ -164,7 +145,7 @@ typedef struct {
 									  //   data block extension contains info data for histograms data blocks
 	unsigned short    reserved2;
 	unsigned short    chksum;            // checksum of file header
-}bhfile_header;
+}sdt_file_header;
 
 typedef struct _bhfile_block_header {
 	unsigned char  data_offs_ext;        // extension of data_offs field - address bits 32-39
