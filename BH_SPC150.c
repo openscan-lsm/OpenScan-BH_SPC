@@ -703,7 +703,7 @@ static DWORD WINAPI BH_FIFO_Loop(void *param)
 	}
 
 	//write the SDT file
-	if (OScDev_CHECK(err, BH_LTDataSave(device)))
+	if (OScDev_CHECK(err, SaveHistogramAndIntensityImage(device)))
 	{
 		OScDev_Log_Error(device, "Error writing SDT file");
 		BH_FinishAcquisition(device);
@@ -823,8 +823,7 @@ OScDev_Error save_photons_in_file(struct AcqPrivateData *acq) {
 }
 
 
-// write SDT file
-OScDev_Error BH_LTDataSave(void *param) 
+OScDev_Error SaveHistogramAndIntensityImage(void *param) 
 {
 	OScDev_Device *device = (OScDev_Device *)param;
 	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
