@@ -50,3 +50,6 @@ test-driver
 # Build
 Debug/
 Release/
+
+# Generated file
+SPC_data_file_structure*.h

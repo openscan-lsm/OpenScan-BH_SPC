@@ -877,9 +877,9 @@ OScDev_Error SaveHistogramAndIntensityImage(void *param)
 
 	short moduleType = SPC_test_id(MODULE);
 
-	sdt_file_header fileHeader;
+	bhfile_header fileHeader;
 	fileHeader.revision = 0x28 << 4;
-	fileHeader.info_offs = sizeof(sdt_file_header);
+	fileHeader.info_offs = sizeof(bhfile_header);
 	fileHeader.info_length = fileInfoLength;
 	fileHeader.setup_offs = fileHeader.info_offs + fileHeader.info_length;
 	fileHeader.setup_length = setupLength;
@@ -973,6 +973,8 @@ OScDev_Error SaveHistogramAndIntensityImage(void *param)
 	meas_desc.dig_flags = parameters.master_clock;
 
 	// Create Data Block Header
+	// FIXME 'lblock_no' is written twice below, probably meant to set
+	// 'block_no' in the old-style block header.
 	BHFileBlockHeader block_header;
 	block_header.lblock_no = 1;
 	block_header.data_offs = fileHeader.data_block_offs + sizeof(BHFileBlockHeader);
@@ -1096,11 +1098,11 @@ OScDev_Error SaveHistogramAndIntensityImage(void *param)
 	if (sdtFile == NULL)
 		return 0;
 
-	ret = fwrite(&fileHeader, sizeof(sdt_file_header), 1, sdtFile);  //Write Header Block
+	ret = fwrite(&fileHeader, sizeof(bhfile_header), 1, sdtFile);  //Write Header Block
 	ret = fwrite(fileInfoString, fileInfoLength, 1, sdtFile);  // Write File Info Block
 	ret = fwrite(setupString, setupLength, 1, sdtFile);  // Write Setup Block
 	ret = fwrite(&meas_desc, sizeof(MeasureInfo), 1, sdtFile);  //Write Measurement Description Block
-	ret = fwrite(&block_header, sizeof(data_block_header), 1, sdtFile);  //Write Data Block Header
+	ret = fwrite(&block_header, sizeof(BHFileBlockHeader), 1, sdtFile);  //Write Data Block Header
 	ret = fwrite(histogramImage, sizeof(short), histogramImageSizeBytes / sizeof(short), sdtFile);
 
 	fclose(sdtFile);
