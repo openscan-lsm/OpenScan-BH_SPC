@@ -12,7 +12,6 @@ static size_t g_openDeviceCount = 0;
 
 // monitoring critical FLIM parameters
 // such as CFD, Sync, etc.
-// supposed to be running all the time
 static DWORD WINAPI BH_Monitor_Loop(void *param)
 {
 	OScDev_Device *device = (OScDev_Device *)param;
@@ -82,51 +81,56 @@ static OScDev_Error EnsureFLIMBoardInitialized(void)
 
 	short spcErr;
 	short spcRet;
-	int active_board[1];
-	SPCModInfo m_ModInfo;
-	//short status=SPC_get_init_status();
-	int  a = 0;
-	//spcErr = SPC_close();  // close SPC150 if it remains open from previous session
-	spcErr = SPC_init("sspcm.ini");
+
+	char iniFileName[] = "sspcm.ini";
+	spcErr = SPC_init(iniFileName);
 	if (spcErr < 0)
 	{
 		char msg[OScDev_MAX_STR_LEN + 1] = "Cannot initialize BH SPC150 using: ";
-		strcat(msg, "Sspcm.ini");
+		strcat(msg, iniFileName);
 		OScDev_Log_Error(NULL, msg);
 		return OScDev_Error_Unknown; // TODO: add error msg: CANNOT_OPEN_FILE
 	}
 
-	spcRet = SPC_get_module_info(MODULE, (SPCModInfo *)&m_ModInfo);
+	SPCModInfo moduleInfo;
+	spcRet = SPC_get_module_info(MODULE, (SPCModInfo *)&moduleInfo);
 	if (spcRet != 0) {
+		// TODO Result not used (and type wrong)
 		SPC_get_error_string(spcRet, spcErr, 100);
-
 	}
 
-	int isBoardActive = 0;
-	if (m_ModInfo.init == OK)
+	if (moduleInfo.init != OK)
 	{
-		isBoardActive = 1;
-	}
-	else
-	{	// the board is forced to be available to this program in harware mode
-		//reset the board and reload
+		// TODO In general, forcing does not seem like the right thing to do
+		// (if the module is in use by another app or another instance of
+		// OpenScan, we should show an error rather than force).
+		//
+		// Also, SPC_set_mode() cannot be correctly used here, because it
+		// initializes or deinitializes all modules on the system; there is no
+		// option to touch only the module of interest.
+		//
+		// Probably the best thing to do here is to use
+		// SPC_read_parameters_from_inifile() and SPC_set_parameters() if
+		// SPC_init() doesn't work due to having already been called _by us_.
+		// If SPC_set_parameters() fails, then another app is using the module
+		// and we should give up.
+		//
+		// This can be combined with calling SPC_close() at the moment we
+		// de-initialize the last remaining module, which in practice will
+		// allow SPC_init() to succeed most of the time anyway.
+
+		// the board is forced to be available to this program in harware mode
 		short force_use = 1;
+		// FIXME 3rd arg to SPC_set_mode must be int[8] (probable crash if we
+		// had multiple modules)
+		int active_board[1];
 		active_board[0] = 1;
 		spcRet = SPC_set_mode(SPC_HARD, force_use, active_board);
 
-		//reset?
-		SPC_get_module_info(MODULE, (SPCModInfo *)&m_ModInfo);
-
-		if (m_ModInfo.init == OK)
-		{
-			isBoardActive = 1;
-		}
-		else
-		{
-			//resetting the board failed
-			isBoardActive = 0;
-		}
+		SPC_get_module_info(MODULE, (SPCModInfo *)&moduleInfo);
+		// FIXME Check the result?
 	}
+
 	g_BH_initialized = true;
 	return OScDev_OK;
 }
@@ -136,8 +140,13 @@ static OScDev_Error DeinitializeFLIMBoard(void)
 {
 	if (!g_BH_initialized)
 		return OScDev_OK;
-	
-	// TODO - close the FLIM board
+
+	// It is not possible to "close" or "de-initialize" a single module;
+	// the only provided function is SPC_close(void) which would de-init
+	// all modules.
+
+	// TODO It might be worth calling SPC_close() if and only if this is
+	// the last module being deinitialized.
 
 	g_BH_initialized = false;
 	return OScDev_OK;
@@ -146,17 +155,14 @@ static OScDev_Error DeinitializeFLIMBoard(void)
 
 static OScDev_Error EnumerateInstances(OScDev_Device ***devices, size_t *count)
 {
-	// TODO
-	// check if the FLIM board is available in the system
-	// then deinitialize it so that other FLIM software like SPCm can use it
-	// when it is not used in OpenScan
-	//OSc_Return_If_Error(EnsureFLIMBoardInitialized());
-	//OSc_Return_If_Error(DeinitializeFLIMBoard());
-
-	// For now, support just one board
+	// TODO SPC_test_id(0...7) can be used to get all modules present.
+	// We would then have the user supply a .ini file for each module,
+	// and check that the .ini file specifies the correct module number
+	// before calling SPC_init().
 
 	struct BH_PrivateData *data = calloc(1, sizeof(struct BH_PrivateData));
-	data->moduleNr = 0; // TODO for multiple modules
+	// For now, support just one board
+	data->moduleNr = 0;
 
 	OScDev_Device *device;
 	OScDev_Error err;
@@ -214,13 +220,16 @@ static OScDev_Error BH_Open(OScDev_Device *device)
 	if (OScDev_CHECK(err, EnsureFLIMBoardInitialized()))
 		return err;
 
+	// TODO There was previously a comment here suggesting that acquisitions
+	// that did not cleanly finish or a previous program crash could cause
+	// the module to remain "in use". Is this true? In any case, the following
+	// result from SPC_get_module_info() is not being used and is also
+	// redundant (see EnsureFLIMBoardInitialized() called above).
 	SPCModInfo m_ModInfo;
-	// inUse = -1 means SPC150 board was still being used by previous session i.e. the code didn't exit correctly
-	// TODO: need to find the way to exit the board when the software crashes
 	short spcErr = SPC_get_module_info(GetData(device)->moduleNr, (SPCModInfo *)&m_ModInfo);
-	//if (m_ModInfo.in_use == -1)
-	//	SPC_set_mode(SPC_HARD, 1, 1);  // force to take control of the active board
-	
+
+	// TODO Documentation says a call to SPC_configure_memory() is NOT
+	// required when operating in FIFO modes. Should remove this.
 	SPCMemConfig memInfo;
 	spcErr = SPC_configure_memory(GetData(device)->moduleNr,
 		-1 /* TODO */, 0 /* TODO */, &memInfo);
@@ -232,6 +241,9 @@ static OScDev_Error BH_Open(OScDev_Device *device)
 	// read SPC150 parameters such as CFD, Sync, etc in a separate thread
 	// TODO: the issue starting monitor loop here is that if Stop Live is clicked
 	// i.e. stopRequested = true, the thread will exit and there is no way to restart it
+	// TODO What is the reason for stopping the loop when an acquisition
+	// finishes? Also, are we sure that SPC_read_rates() can be called from a
+	// background thread without disrupting other operations?
 	DWORD id;
 	GetData(device)->acquisition.monitorThread = CreateThread(NULL, 0, BH_Monitor_Loop, device, 0, &id);
 
@@ -296,6 +308,7 @@ static OScDev_Error BH_GetSettings(OScDev_Device *device, OScDev_Setting ***sett
 
 static OScDev_Error BH_GetAllowedResolutions(OScDev_Device *device, size_t **widths, size_t **heights, size_t *count)
 {
+	// TODO If we are hard-coded to 256x256, we shouldn't allow anything else!
 	static size_t resolutions[] = { 256, 512, 1024, 2048 };
 	*widths = *heights = resolutions;
 	*count = sizeof(resolutions) / sizeof(size_t);
@@ -310,9 +323,7 @@ static OScDev_Error BH_GetResolution(OScDev_Device *device, size_t *width, size_
 	if (spcRet)
 		return OScDev_Error_Unknown;
 
-	//*width = data.scan_size_x;
-	//*height = data.scan_size_y;
-
+	// TODO Shouldn't be hard-coded!
 	*height = 256;
 	*width = 256;
 	return OScDev_OK;
@@ -360,172 +371,112 @@ static OScDev_Error BH_GetBytesPerSample(OScDev_Device *device, uint32_t *bytesP
 }
 
 
-// Current main loop for FLIM acquisition
+// Main acquisition loop
 static DWORD WINAPI BH_FIFO_Loop(void *param)
 {
 	OScDev_Error err;
+
+	// TODO What is the principle by which setup code is distributed in
+	// set_measurement_params() vs this function?
+	// TODO We need to pass at least module no to set_measurement_params()
 	if (OScDev_CHECK(err, set_measurement_params()))
 		return err;
 
 	OScDev_Device *device = (OScDev_Device *)param;
 	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
-	SPCdata parameterCheck;
-	SPC_get_parameters(0, &parameterCheck);
+
+	// TODO Why call this a second time?
 	if (OScDev_CHECK(err, set_measurement_params()))
 		return err;
 
-	acq->firstWrite = 1;
+	acq->firstWrite = true;
 	OScDev_Log_Debug(device, "Waiting for user to start FLIM acquisition...");
 
-	//adapted from init_fifo_measurement
+	short moduleNr = GetData(device)->moduleNr;
 
-	float curr_mode;
-	unsigned short offset_value, *ptr;
-	unsigned long photons_to_read, words_to_read, words_left;
-	//char phot_fname[80];
-	short state;
-	short spcRet=0;
-	// in most of the modules types with FIFO mode it is possible to stop the fifo measurement 
-	//   after specified Collection time
-	short fifo_stopt_possible = 1;
-	short first_write = 1;
-	short module_type = M_SPC150;
-	short fifo_type; 
-	short act_mod = 0;
-	unsigned long fifo_size;
-	unsigned long max_ph_to_read, max_words_in_buf, words_in_buf = 0 , current_cnt;
 	unsigned short fpga_version;
 
-	SPC_get_version(act_mod, &fpga_version);
+	SPC_get_version(moduleNr, &fpga_version);
 	// before the measurement sequencer must be disabled
-	SPC_enable_sequencer(act_mod, 0);
+	SPC_enable_sequencer(moduleNr, 0);
 	// set correct measurement mode
 
-	SPC_get_parameter(act_mod, MODE, &curr_mode);
+	// TODO We seem to allow mode = ROUT_OUT and mode = FIFO_32M below.
+	// Have we tested both? Shouldn't we always use FIFO_32M?
+	float mode;
+	SPC_get_parameter(moduleNr, MODE, &mode);
 
-	SPC_get_parameters(0, &parameterCheck);
-	switch (module_type) {
-	case M_SPC130:
-		break;
-		//these blocks hsould be upgraded to support other boards// TODO
-	case M_SPC600:
-	case M_SPC630:
-		break;
-
-	case M_SPC830:
-		break;
-
-	case M_SPC140:
-		break;
-
-	case M_SPC150:
-		// ROUT_OUT in 150 == fifo
-		if (curr_mode != ROUT_OUT &&  curr_mode != FIFO_32M) {
-			SPC_set_parameter(act_mod, MODE, ROUT_OUT);
-			curr_mode = ROUT_OUT;
-		}
-		fifo_size = 16 * 262144;  // 4194304 ( 4M ) 16-bit words
-		if (curr_mode == ROUT_OUT)
-			fifo_type = FIFO_150;
-		else  // FIFO_IMG ,  marker 3 can be enabled via ROUTING_MODE
-			fifo_type = FIFO_IMG;
-
-		acq->fifo_type = fifo_type;
-		break;
-
+	if (mode != ROUT_OUT &&  mode != FIFO_32M) {
+		SPC_set_parameter(moduleNr, MODE, ROUT_OUT);
+		mode = ROUT_OUT;
 	}
-	unsigned short rout_mode, scan_polarity;
-	float fval;
+	if (mode == ROUT_OUT)
+		acq->fifoType = FIFO_150;
+	else  // FIFO_IMG ,  marker 3 can be enabled via ROUTING_MODE
+		acq->fifoType = FIFO_IMG;
 
 	// ROUTING_MODE sets active markers and their polarity in Fifo mode ( not for FIFO32_M)
 	// bits 8-11 - enable Markers0-3,  bits 12-15 - active edge of Markers0-3
 
 	// SCAN_POLARITY sets markers polarity in FIFO32_M mode
-	SPC_get_parameter(act_mod, SCAN_POLARITY, &fval);
-	scan_polarity = fval;
-	SPC_get_parameter(act_mod, ROUTING_MODE, &fval);
-	rout_mode = fval;
 
-	SPC_get_parameters(0, &parameterCheck);
+	float fval;
+	SPC_get_parameter(moduleNr, SCAN_POLARITY, &fval);
+	unsigned short scanPolarity = (unsigned short)fval;
+	SPC_get_parameter(moduleNr, ROUTING_MODE, &fval);
+	unsigned short routingMode = (unsigned short)fval;
+
+	// TODO Although the settings for routing_mode and scan_polarity
+	// follow the example code, they don't make sense. The docs do not
+	// mention bits 0-5 of routing_mode. Why are we copying bits 0-2 of
+	// scan_polarity into the same bits of routing_mode?
+
 	// use the same polarity of markers in Fifo_Img and Fifo mode
-	rout_mode &= 0xfff8;
-	rout_mode |= scan_polarity & 0x7;
+	routingMode &= 0xfff8;
+	routingMode |= scanPolarity & 0x7;
 
-	SPC_get_parameter(act_mod, MODE, &curr_mode);
+	// TODO Redundant (or move up to just after previous set)
+	SPC_get_parameter(moduleNr, MODE, &mode);
 
-	SPC_get_parameters(0, &parameterCheck);
-	if (curr_mode == ROUT_OUT) {
-		rout_mode |= 0xf00;     // markers 0-3 enabled
-		SPC_set_parameter(act_mod, ROUTING_MODE, rout_mode);
+	if (mode == ROUT_OUT) {
+		routingMode |= 0xf00;     // markers 0-3 enabled
+		SPC_set_parameter(moduleNr, ROUTING_MODE, routingMode);
 	}
-	if (curr_mode == FIFO_32M) {
-		rout_mode |= 0x800;     // additionally enable marker 3
-		SPC_set_parameter(act_mod, ROUTING_MODE, rout_mode);
-		SPC_set_parameter(act_mod, SCAN_POLARITY, scan_polarity);
+	if (mode == FIFO_32M) {
+		routingMode |= 0x800;     // additionally enable marker 3
+		SPC_set_parameter(moduleNr, ROUTING_MODE, routingMode);
+		// TODO Redundant (we did not change scanPolarity)
+		SPC_set_parameter(moduleNr, SCAN_POLARITY, scanPolarity);
 	}
-	SPC_get_parameters(0, &parameterCheck);
-	// switch off stop_on_overfl
+
 	float collectionTime = (float)GetData(device)->acqTime;
-	SPC_set_parameter(-1, COLLECT_TIME, collectionTime);//setting the collection time from the device property browser
+	SPC_set_parameter(-1, COLLECT_TIME, collectionTime);
 
-	SPC_set_parameter(act_mod, STOP_ON_OVFL, 1);
-	
-	SPC_set_parameter(act_mod, STOP_ON_TIME, 1);
-	
-	if (fifo_stopt_possible) {
+	SPC_set_parameter(moduleNr, STOP_ON_OVFL, 1);
+	SPC_set_parameter(moduleNr, STOP_ON_TIME, 1);
 
-		SPC_set_parameter(act_mod, STOP_ON_TIME, 1);
-	}
+	unsigned long bufferCapacityEvents = 200000;
+	unsigned long bufferCapacityWords = 2 * bufferCapacityEvents;
 
-	SPC_get_parameters(0, &parameterCheck);//check the time 
-	if (module_type == M_SPC830)
-		max_ph_to_read = 2000000; // big fifo, fast DMA readout
-	else
-		//max_ph_to_read = 16384;
-		max_ph_to_read = 200000;
-	if (fifo_type == FIFO_48)
-		max_words_in_buf = 3 * max_ph_to_read;
-	else
-		max_words_in_buf = 2 * max_ph_to_read;
-
-
-	acq->buffer = (unsigned short *)malloc(max_words_in_buf * sizeof(unsigned short)); //memory allocation for FIFO data collection
+	acq->buffer = malloc(bufferCapacityWords * sizeof(unsigned short));
 	if (acq->buffer ==NULL)
 		return 0;
-	SPC_get_parameters(0, &parameterCheck);
-	photons_to_read = 100000000;
 
-	words_to_read = 2 * photons_to_read; //max photon in one acquisition cycle
-
-	words_left = words_to_read;
+	// TODO Why 1e8 photons? Should this be configurable?
+	unsigned long maxEventsToRead, maxWordsToRead, wordsRemaining;
+	maxEventsToRead = 100000000;
+	maxWordsToRead = 2 * maxEventsToRead;
+	wordsRemaining = maxWordsToRead;
 	
-	strcpy(acq->phot_fname, "BH_photons.spc");//name will later be collected from user //FLIMTODO
+	strcpy(acq->photonFilename, "BH_photons.spc");//name will later be collected from user //FLIMTODO
 
-	int totalWord = 0;
-	int loopcount = 0;
-	int totalPhot = 0;
-	int markerLine = 0;
-	int markerFrame = 0;
-	int flimPixelType = 0;
-	int flimPhotonType = 0;
-
-	int max_buff_reached = 0;
-
-	unsigned long lineFrameMacroTime = 0;
-	int countprev = 0;
-	int linCount = 0;
-	int pixCount = 0;
-	int pixelTime = 150;//This is in terms of macro time
-	int frameCount = 0;
-	int maxMacroTime = 0;
-	unsigned short PrevMacroTIme = 0;
-	unsigned long totMacroTime = 0;
-
-	SPC_get_parameters(0, &parameterCheck);
-	//snprintf(msg, OScDev_MAX_STR_LEN, "Updated magnification is: %6.2f", *magnification);
-
-	bool stopRequested;  // allow user to stop acquisition
-	// do not start FLIM acquisition until user click 'StartFLIM'
+	// TODO The terminology here is too confusing. "started" apparently
+	// means that image acquisition is _enabled_ by the user, which has
+	// nothing to do with starting. In other words, "started" being false
+	// corresponds to not producing an image, which is a very buggy workaround
+	// (not currently allowed by OpenScanLib) used for viewing the rate
+	// counters only.
+	bool stopRequested;
 	while (true)
 	{
 		EnterCriticalSection(&(acq->mutex));
@@ -549,12 +500,17 @@ static DWORD WINAPI BH_FIFO_Loop(void *param)
 	}
 	
 	// TODO: not sure if the loop should directly exit here if stop is reuqested?
-	spcRet = SPC_start_measurement(GetData(device)->moduleNr);
+	short spcRet = SPC_start_measurement(GetData(device)->moduleNr);
 	char msg[OScDev_MAX_STR_LEN + 1];
 	snprintf(msg, OScDev_MAX_STR_LEN, "return value after start measurement %d", spcRet);
 	OScDev_Log_Debug(device, msg);
+	// TODO Stop with error if spcRet != 0
 
-	// keep acquiring photon data until the set acquisition time is over
+	unsigned long bufferDataSizeWords = 0;
+
+	// TODO Probably better to sleep briefly before the 'continue' statements
+	// in the loop below. 1 ms?
+
 	GetData(device)->flimDone = false; 
 	while (!spcRet) 
 	{
@@ -568,126 +524,95 @@ static DWORD WINAPI BH_FIFO_Loop(void *param)
 			break;
 		}
 
-		loopcount++;  // debug use only
-		//char msg[OScDev_MAX_STR_LEN + 1];
-		//snprintf(msg, OScDev_MAX_STR_LEN, "Current FLIM loop: %d", loopcount);
-		//OScDev_Log_Debug(device, msg);
-
 		// now test SPC state and read photons
-		SPC_test_state(act_mod, &state);
-		// user must provide safety way out from this loop 
-		//    in case when trigger will not occur or required number of photons 
-		//          cannot be reached
-		if (state & SPC_WAIT_TRG) {   // wait for trigger                
+		short state;
+		SPC_test_state(moduleNr, &state);
+		if (state & SPC_WAIT_TRG) {
 			continue;
 		}
-		if (state != 192)//check for debugging, not needed (DELETE)
-		{
-			snprintf(msg, OScDev_MAX_STR_LEN, "inside while, state %d", state);
-			OScDev_Log_Debug(device, msg);
+
+		unsigned long readSizeWords;
+		if (wordsRemaining > bufferCapacityWords - bufferDataSizeWords) {
+			readSizeWords = bufferCapacityWords - bufferDataSizeWords;
+		}
+		else {
+			// FIXME Shouldn't this be wordsRemaining?
+			readSizeWords = bufferCapacityWords;
 		}
 
-		if (words_left > max_words_in_buf - words_in_buf)
-			// limit current_cnt to the free space in buffer
-			current_cnt = max_words_in_buf - words_in_buf;
-		else
-			current_cnt = max_words_in_buf;//1*words_left; orginal code
+		unsigned short *bufferStart = &(acq->buffer[bufferDataSizeWords]);
 
-		ptr = (unsigned short *)&(acq->buffer[words_in_buf]);
+		if (state & SPC_ARMED) {
+			if (state & SPC_FEMPTY) // FIFO is empty; nothing to read
+				continue;
 
-		SPCdata parameterCheck1;
-		SPC_get_parameters(0, &parameterCheck1);
+			spcRet = SPC_read_fifo(moduleNr, &readSizeWords, bufferStart);
 
-
-		if (state & SPC_ARMED) {  //  system armed   //continues to get data
-			
-			if (state & SPC_FEMPTY)
-				continue;  // Fifo is empty - nothing to read
-
-						   // before the call current_cnt contains required number of words to read from fifo
-			spcRet = SPC_read_fifo(act_mod, &current_cnt, ptr);
-			//printf("%d ",current_cnt);
-
-			totalPhot += current_cnt;
-			words_left -= current_cnt;
-			if (words_left <= 0)
-				break;   // required no of photons read already
+			// FIXME wordsRemaining is unsigned, so we could wrap around
+			// here until we fix the bug above computing readSizeWords.
+			wordsRemaining -= readSizeWords;
+			if (wordsRemaining <= 0)
+				break;
 
 			if (state & SPC_FOVFL) {
-
-				OScDev_Log_Debug(device, "SPC Overload");
+				// TODO This should report an error
+				OScDev_Log_Debug(device, "SPC FIFO overflow (data lost)");
+				// We could potentially continue (with a warning), as the
+				// photon data stream can record a GAP.
 				break;
-				//should I read the rest of the data? 
 			}
 
-			if ((state & SPC_COLTIM_OVER) | (state & SPC_TIME_OVER)) {//if overtime occured, that should be over
-					  
-																	  //there should be exit code here if time over by 10 seconds
-
-				OScDev_Log_Debug(device, "FLIM Collection time over 1");
+			if ((state & SPC_COLTIM_OVER) || (state & SPC_TIME_OVER)) {
+				OScDev_Log_Debug(device, "SPC collection time reached");
 				break;
-
 			}
-			words_in_buf += current_cnt;
-			if (words_in_buf == max_words_in_buf) {
-				// your buffer is full, but photons are still needed 
-				// save buffer contents in the file and continue reading photons
-				max_buff_reached++;
 
-				acq->words_in_buf = words_in_buf;
+			bufferDataSizeWords += readSizeWords;
+			if (bufferDataSizeWords == bufferCapacityWords) {
+				// TODO Pass buffer pointer and data size to save func instead of
+				// using AcqPrivateData as a transfer mechanism
+				acq->bufferDataSizeWords = bufferDataSizeWords;
 				spcRet= save_photons_in_file(acq);
-				totalWord += words_in_buf;
-				acq->words_in_buf=words_in_buf = 0;
-				OScDev_Log_Debug(device, "Maximum buffer reached");
+				acq->bufferDataSizeWords = bufferDataSizeWords = 0;
 			}
 		}
-		else { //enters when SPC is not armed //NOT armed when measurement is NOT in progress
-			if (fifo_stopt_possible && (state & SPC_TIME_OVER) != 0) {
-				// measurement stopped after collection time
-				// read rest photons from the fifo
-				// before the call current_cnt contains required number of words to read from fifo
-				spcRet = SPC_read_fifo(act_mod, &current_cnt, ptr);
-				// after the call current_cnt contains number of words read from fifo  
+		else { // Not armed
+			// TODO Why not SPC_COLTIM_OVER here (compare above check)
+			if ((state & SPC_TIME_OVER) != 0) {
+				// Read the remaining events
+				spcRet = SPC_read_fifo(moduleNr, &readSizeWords, bufferStart);
 
-				words_left -= current_cnt;
-				words_in_buf += current_cnt; //should be reading until less than zero
-				acq->words_in_buf += current_cnt;
+				// FIXME This is buggy: compare with code above
+				wordsRemaining -= readSizeWords;
+				bufferDataSizeWords += readSizeWords;
+				acq->bufferDataSizeWords += readSizeWords;
 				break;
 			}
 		}
-		if ((state & SPC_COLTIM_OVER) | (state & SPC_TIME_OVER)) {//if overtime occured, that should be over
-																  //there should be exit code here if time over by 10 seconds
-				OScDev_Log_Debug(device, "FLIM Collection time over 2");
+
+		// TODO We check for this case above. Checking here is redundant,
+		// and breaking is a bug because it may discard the last bit of data.
+		if ((state & SPC_COLTIM_OVER) | (state & SPC_TIME_OVER)) {
+				OScDev_Log_Debug(device, "SPC collection time reached");
 				break; 
 		}
 	}
 
-	// SPC_stop_measurement should be called even if the measurement was stopped after collection time
-	//           to set DLL internal variables
 	OScDev_Log_Debug(device, "Finished FLIM");
 
-	snprintf(msg, OScDev_MAX_STR_LEN, "total words acquired %d", totalWord);
-	OScDev_Log_Debug(device, msg);
+	// See documentation: 2 calls are required. (Events generated up to the
+	// first call can be read before the second call, but there is probably
+	// no point in doing so because it is all software-timed.)
+	SPC_stop_measurement(moduleNr);
+	SPC_stop_measurement(moduleNr);
 
-	SPC_stop_measurement(act_mod);
-	SPC_stop_measurement(act_mod);
-	totalWord += words_in_buf;
-	if (words_in_buf > 0) {
-
-		acq->words_in_buf = words_in_buf;
+	if (bufferDataSizeWords > 0) {
+		acq->bufferDataSizeWords = bufferDataSizeWords;
 		spcRet = save_photons_in_file(acq);
-
-	}
-	//savign the photon(converted to exponential file)
-	//this funtion should execute after the acquisition is over
-	
-	//BH_extractPhoton(device);
-
-	if (acq->buffer) {
-		free(acq->buffer);
 	}
 
-	//write the SDT file
+	free(acq->buffer);
+
 	if (OScDev_CHECK(err, SaveHistogramAndIntensityImage(device)))
 	{
 		OScDev_Log_Error(device, "Error writing SDT file");
@@ -711,35 +636,15 @@ static void BH_FinishAcquisition(OScDev_Device *device)
 }
 
 OScDev_Error set_measurement_params() {
-	/*
-	-the SPC parameters must be set(SPC_init or SPC_set_parameter(s)),
-		-the SPC memory must be configured(SPC_configure_memory in normal modes),
-		-the measured blocks in SPC memory must be filled(cleared) (SPC_fill_memory),
-		-the measurement page must be set(SPC_set_page)
+	// TODO Documentation says a call to SPC_configure_memory() is NOT
+	// required when operating in FIFO modes. Should remove this.
 
-		*/
 	SPCMemConfig m_spc_mem_config;
-
-	int m_meas_page = 0;
-	//reset the memory of LifeTime board
 	SPC_configure_memory(MODULE, -1, 0, &m_spc_mem_config);
 	short ret = SPC_fill_memory(MODULE, -1, -1, 0);
+
+	ret= SPC_set_page(MODULE, 0);
 	if (ret != 0) {
-		//TRACE("Failed at SPC_fill_memory()\n");
-		//SPC_get_error_string(ret, err, 100);
-		//TRACE("\n ERROR_MEMORY_FILL \n %s\n", err);
-	}
-
-	//ret = SPC_clear_rates(MODULE);
-
-	//ret = SPC_fill_memory(MODULE, -1, m_meas_page, 0);
-
-	ret= SPC_set_page(MODULE, m_meas_page);
-
-
-
-	if (ret != 0) {
-		//TRACE("ERROR: when clearing rates\n");
 		return ret;
 	}
 
@@ -747,64 +652,55 @@ OScDev_Error set_measurement_params() {
 }
 
 
-OScDev_Error save_photons_in_file(struct AcqPrivateData *acq) {
+OScDev_Error save_photons_in_file(struct AcqPrivateData *acq)
+{
+	FILE *fp;
 	
-	long ret;
-	int i;
-	unsigned short first_frame[3], no_of_fifo_routing_bits;
-	unsigned long lval;
-	float fval;
-	FILE *stream;
-	unsigned header;
-	//char phot_fname[80];
-	
-	strcpy(acq->phot_fname, "BH_photons.spc");//name will later be collected from user //FLIMTODO
+	// TODO User-provided filename
+	strcpy(acq->photonFilename, "BH_photons.spc");
 
 	if (acq->firstWrite) {
+		unsigned header;
+		short ret = SPC_get_fifo_init_vars(0, NULL, NULL, NULL, &header);
+		if (ret != 0) {
+			return -1;
+		}
 
-
-		no_of_fifo_routing_bits = 3; // it means 8 routing channels - default value
-									 //  set to 0 if router is not used
-
-									 ///
+		unsigned short first_frame[3];
+		first_frame[0] = (unsigned short)header;
+		first_frame[1] = (unsigned short)(header >> 16);
 		first_frame[2] = 0;
 
-//		ret = SPC_get_fifo_init_vars(0, NULL, NULL, NULL, &spc_header);
-		
-		signed short ret = SPC_get_fifo_init_vars(0, NULL, NULL, NULL, &header);
-		if (!ret) {
-			first_frame[0] = (unsigned short)header;
-			first_frame[1] = (unsigned short)(header >> 16);
-		}
-		else
+		fp = fopen(acq->photonFilename, "wb");
+		if (!fp)
 			return -1;
 
-		acq->firstWrite = 0;
-		// write 1st frame to the file
-		stream = fopen(acq->phot_fname, "wb");
-		if (!stream)
-			return -1;
-
-		if (acq->fifo_type == FIFO_48)
-			fwrite((void *)&first_frame[0], 2, 3, stream); // write 3 words ( 48 bits )
+		// TODO Here and elsewhere we have bits of code for 6-byte (3-word)
+		// event records, but other parts of the code assume 4-byte records.
+		// Delete code for FIFO_48 until we can fully support it.
+		if (acq->fifoType == FIFO_48)
+			fwrite(first_frame, sizeof(unsigned short), 3, fp);
 		else
-			fwrite((void *)&first_frame[0], 2, 2, stream); // write 2 words ( 32 bits )
+			fwrite(first_frame, sizeof(unsigned short), 2, fp);
+
+		acq->firstWrite = false;
 	}
 	else {
-		stream = fopen(acq->phot_fname, "ab");
-		if (!stream)
+		fp = fopen(acq->photonFilename, "ab");
+		if (!fp)
 			return -1;
-		fseek(stream, 0, SEEK_END);     // set file pointer to the end
+
+		// TODO This is redundant because we passed "a" to fopen() above
+		fseek(fp, 0, SEEK_END);
 	}
 
+	size_t wordsWritten = fwrite((void *)acq->buffer, sizeof(unsigned short),
+		acq->bufferDataSizeWords, fp);
+	fclose(fp);
+	if (wordsWritten != acq->bufferDataSizeWords)
+		return -1;
 
-	ret = fwrite((void *)acq->buffer, 1, 2 * acq->words_in_buf, stream); // write photons buffer
-	fclose(stream);
-	if (ret != 2 * acq->words_in_buf)
-		return -1;     // error type in errno
-		
 	return OScDev_OK;
-
 }
 
 
@@ -813,16 +709,18 @@ OScDev_Error SaveHistogramAndIntensityImage(void *param)
 	OScDev_Device *device = (OScDev_Device *)param;
 	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
 
-	// Note: We cannot use SPC_save_data_to_sdtfile() cannot be used in FIFO Image mode
+	// Note: We cannot use SPC_save_data_to_sdtfile(); that function is only
+	// for conventional (non-FIFO) acquisition modes.
 
 	int stream_type = BH_STREAM;
 	int what_to_read = 1;   // valid photons
-	if (acq->fifo_type == FIFO_IMG) {
+	if (acq->fifoType == FIFO_IMG) {
 		stream_type |= MARK_STREAM;
 		what_to_read |= (0x4 | 0x8 | 0x10);   // also pixel, line, frame markers possible
 	}
 
-	acq->streamHandle = SPC_init_phot_stream(acq->fifo_type, acq->phot_fname, 1, stream_type, what_to_read);
+	// TODO stream handle is only used in this function; pointless to put in AcqPrivateData.
+	acq->streamHandle = SPC_init_phot_stream(acq->fifoType, acq->photonFilename, 1, stream_type, what_to_read);
 
 	SPCdata parameters;
 	SPC_get_parameters(MODULE, &parameters);
@@ -858,7 +756,7 @@ OScDev_Error SaveHistogramAndIntensityImage(void *param)
 		"*SETUP\r\n"
 		"*END\r\n"
 		"\r\n";
-	unsigned setupLength = strlen(setupString);
+	short setupLength = (short)strlen(setupString);
 
 	short moduleType = SPC_test_id(MODULE);
 
@@ -986,6 +884,9 @@ OScDev_Error SaveHistogramAndIntensityImage(void *param)
 	int ret = 0;
 	if (acq->streamHandle >= 0) {
 		// Read stream info to skip
+		// TODO This is almost certainly not needed unless we need the stream
+		// info: the function does not operate like a sequential read, unlike
+		// SPC_get_photon()
 		SPC_get_phot_stream_info(acq->streamHandle, &unusedStreamInfo);
 
 		unsigned frameIndex = 0;
@@ -997,6 +898,8 @@ OScDev_Error SaveHistogramAndIntensityImage(void *param)
 		while (!ret) { // untill error (for example end of file)
 			PhotInfo64 phot_info;
 			ret = SPC_get_photon(acq->streamHandle, (PhotInfo *)&phot_info);
+			// FIXME If we have an error, shouldn't we quit here instead of at
+			// the next start of the loop?
 
 			if (phot_info.flags & F_MARK) {
 				frameIndex++;
@@ -1061,8 +964,10 @@ OScDev_Error SaveHistogramAndIntensityImage(void *param)
 				histoBinIndex]++;
 		}
 
-		// TODO Not needed?
 		// Read stream info to skip
+		// TODO This is almost certainly not needed unless we need the stream
+		// info: the function does not operate like a sequential read, unlike
+		// SPC_get_photon()
 		SPC_get_phot_stream_info(acq->streamHandle, &unusedStreamInfo);
 
 		SPC_close_phot_stream(acq->streamHandle);
@@ -1083,12 +988,13 @@ OScDev_Error SaveHistogramAndIntensityImage(void *param)
 	if (sdtFile == NULL)
 		return 0;
 
-	ret = fwrite(&fileHeader, sizeof(bhfile_header), 1, sdtFile);  //Write Header Block
-	ret = fwrite(fileInfoString, fileInfoLength, 1, sdtFile);  // Write File Info Block
-	ret = fwrite(setupString, setupLength, 1, sdtFile);  // Write Setup Block
-	ret = fwrite(&meas_desc, sizeof(MeasureInfo), 1, sdtFile);  //Write Measurement Description Block
-	ret = fwrite(&block_header, sizeof(BHFileBlockHeader), 1, sdtFile);  //Write Data Block Header
-	ret = fwrite(histogramImage, sizeof(short), histogramImageSizeBytes / sizeof(short), sdtFile);
+	// TODO Check for i/o errors
+	fwrite(&fileHeader, sizeof(bhfile_header), 1, sdtFile);  //Write Header Block
+	fwrite(fileInfoString, fileInfoLength, 1, sdtFile);  // Write File Info Block
+	fwrite(setupString, setupLength, 1, sdtFile);  // Write Setup Block
+	fwrite(&meas_desc, sizeof(MeasureInfo), 1, sdtFile);  //Write Measurement Description Block
+	fwrite(&block_header, sizeof(BHFileBlockHeader), 1, sdtFile);  //Write Data Block Header
+	fwrite(histogramImage, sizeof(short), histogramImageSizeBytes / sizeof(short), sdtFile);
 
 	fclose(sdtFile);
 

@@ -44,13 +44,11 @@ struct AcqPrivateData
 
 	bool wroteHeader;
 
-	//FIFO params
-	short fifo_type;
-	unsigned long words_in_buf;
+	short fifoType;
+	unsigned long bufferDataSizeWords;
 	unsigned short *buffer;
-	short initVariableTyope;
-	short firstWrite;
-	char phot_fname[80];//TODO
+	bool firstWrite;
+	char photonFilename[80];
 };
 
 
