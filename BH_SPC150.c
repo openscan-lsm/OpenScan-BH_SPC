@@ -4,25 +4,10 @@
 #include <stdio.h>
 #include <stdint.h>
 
-#pragma pack(1)
-
 static bool g_BH_initialized = false;
 static OScDev_Device **g_devices;
 static size_t g_deviceCount;
 static size_t g_openDeviceCount = 0;
-
-
-struct ReadoutState
-{
-	PhotInfo64 *lineBuffer;
-	size_t lineBufferSize;
-	size_t linePhotonCount;
-	size_t lineNr;
-	size_t frameNr;
-
-	// TODO Other fields for pixel-clock-based acquisition
-	// TODO Extra state information if scanning bidirectionally
-};
 
 
 // monitoring critical FLIM parameters
