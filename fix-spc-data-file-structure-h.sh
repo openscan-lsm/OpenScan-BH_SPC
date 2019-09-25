@@ -3,6 +3,8 @@
 # Run this script in Git Bash to generate a compilable version of
 # SPC_data_file_structure.h.
 
+mkdir -p generated_include
+
 # Remove typedef struct ... XYZ blocks for the following types:
 #   MIMGParam (uses undefined type Window)
 #   MOMParam (uses undefined type Window)
@@ -23,4 +25,4 @@ tac '/c/Program Files (x86)/BH/SPCM/SPC_data_file_structure.h' \
 	|sed 's/U_SHORT/unsigned short/' \
 	|sed 's/U_CHAR/unsigned char/' \
 	|sed 's/^const char /static const char /' \
-	>SPC_data_file_structure_fixed.h
+	>generated_include/SPC_data_file_structure_fixed.h

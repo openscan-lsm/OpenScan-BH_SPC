@@ -52,4 +52,4 @@ Debug/
 Release/
 
 # Generated file
-SPC_data_file_structure*.h
+generated_include/
