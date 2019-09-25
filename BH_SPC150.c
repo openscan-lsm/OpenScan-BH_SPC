@@ -10,41 +10,45 @@ static size_t g_deviceCount;
 static size_t g_openDeviceCount = 0;
 
 
-// monitoring critical FLIM parameters
-// such as CFD, Sync, etc.
-static DWORD WINAPI BH_Monitor_Loop(void *param)
+static DWORD WINAPI RateCounterMonitoringLoop(void *param)
 {
 	OScDev_Device *device = (OScDev_Device *)param;
-	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
-	rate_values m_rates;
-	short act_mod = 0;
+	struct BH_PrivateData *privData = GetData(device);
 
-	OScDev_Log_Debug(device, "FLIM monitoring thread starting...");
-	bool stopRequested = false;
+	short moduleNr = 0; // TODO Avoid hard-coded module no
+
+	EnterCriticalSection(&privData->rateCountersMutex);
+	privData->rateCountersRunning = true;
+	LeaveCriticalSection(&privData->rateCountersMutex);
+
+	OScDev_Log_Debug(device, "Rate counter monitoring thread started");
 	while (true)
 	{
-		EnterCriticalSection(&(acq->mutex));
-		// only exit the monitor thread when user set monitoringFLIM to OFF
-		// and Stop Live (or Exit program) is clicked.
-		stopRequested = !(GetData(device)->monitoringFLIM) && acq->stopRequested;
-		LeaveCriticalSection(&(acq->mutex));
-		if (stopRequested)
-		{
-			OScDev_Log_Debug(device, "User interruption...Exiting FLIM monitor loop");
-			GetData(device)->flimStarted = false;  // reset for next run
+		Sleep(100);
+
+		rate_values rates;
+		short err = SPC_read_rates(moduleNr, &rates);
+		if (err != 0) {
+			continue;
+		}
+
+		EnterCriticalSection(&privData->rateCountersMutex);
+		privData->syncRate = rates.sync_rate;
+		privData->cfdRate = rates.cfd_rate;
+		privData->tacRate = rates.tac_rate;
+		privData->adcRate = rates.adc_rate;
+		if (privData->rateCountersStopRequested) {
+			privData->rateCountersRunning = false;
+			LeaveCriticalSection(&privData->rateCountersMutex);
 			break;
 		}
-
-		if (SPC_read_rates(act_mod, &m_rates) == 0) {
-			acq->cfd_value = m_rates.cfd_rate;
-			acq->sync_value = m_rates.sync_rate;
-			acq->adc_value = m_rates.adc_rate;
-			acq->tac_value = m_rates.tac_rate;
-		}
-		Sleep(100);
+		LeaveCriticalSection(&privData->rateCountersMutex);
 	}
 
-	BH_FinishAcquisition(device);
+	OScDev_Log_Debug(device, "Exiting rate counter monitoring thread");
+
+	WakeAllConditionVariable(&privData->rateCountersStopCondition);
+
 	return 0;
 }
 
@@ -55,17 +59,21 @@ static void PopulateDefaultParameters(struct BH_PrivateData *data)
 	data->acqTime = 20;
 	data->flimStarted = false;
 	data->flimDone = false;
-	data->monitoringFLIM = true;
-	data->acquisition.cfd_value = 1.1;
-	data->acquisition.sync_value = 2.1;
-	data->acquisition.adc_value = 3.1;
-	data->acquisition.tac_value = 4.1;
+
+	InitializeCriticalSection(&data->rateCountersMutex);
+	InitializeConditionVariable(&data->rateCountersStopCondition);
+	data->rateCountersStopRequested = false;
+	data->rateCountersRunning = false;
+	data->syncRate = 0.0;
+	data->cfdRate = 0.0;
+	data->tacRate = 0.0;
+	data->adcRate = 0.0;
+	
 	strcpy(data->flimFileName, "default-BH-FLIM-data");
 
 	InitializeCriticalSection(&(data->acquisition.mutex));
 	InitializeConditionVariable(&(data->acquisition.acquisitionFinishCondition));
 	data->acquisition.thread = NULL;
-	data->acquisition.monitorThread = NULL;
 	data->acquisition.streamHandle = 0;
 	data->acquisition.isRunning = false;
 	data->acquisition.started = false;
@@ -76,60 +84,34 @@ static void PopulateDefaultParameters(struct BH_PrivateData *data)
 
 static OScDev_Error EnsureFLIMBoardInitialized(void)
 {
-	if (g_BH_initialized)
-		return OScDev_Error_Device_Already_Open;
+	// There is a mismatch between the OpenScan model of initializing a device
+	// with how BH SPC works: multiple BH modules (boards) are initialized at
+	// once using a single .ini file. We will need to figure out a workaround
+	// for this when we support multiple modules, but for now we assume a
+	// single module.
 
-	short spcErr;
-	short spcRet;
+	if (g_BH_initialized) {
+		// Reject second instance, as we don't yet support multiple modules
+		return OScDev_Error_Device_Already_Open;
+	}
 
 	char iniFileName[] = "sspcm.ini";
-	spcErr = SPC_init(iniFileName);
+	short spcErr = SPC_init(iniFileName);
 	if (spcErr < 0)
 	{
-		char msg[OScDev_MAX_STR_LEN + 1] = "Cannot initialize BH SPC150 using: ";
+		char msg[OScDev_MAX_STR_LEN + 1] = "Cannot initialize BH SPC150 using ";
 		strcat(msg, iniFileName);
+		strcat(msg, ": ");
+		char bhMsg[OScDev_MAX_STR_LEN + 1];
+		SPC_get_error_string(spcErr, bhMsg, sizeof(bhMsg));
+		strncat(msg, bhMsg, sizeof(msg) - strlen(msg) - 1);
+		bhMsg[sizeof(bhMsg) - 1] = '\0';
 		OScDev_Log_Error(NULL, msg);
-		return OScDev_Error_Unknown; // TODO: add error msg: CANNOT_OPEN_FILE
+		return OScDev_Error_Unknown; // TODO: error reporting
 	}
 
-	SPCModInfo moduleInfo;
-	spcRet = SPC_get_module_info(MODULE, (SPCModInfo *)&moduleInfo);
-	if (spcRet != 0) {
-		// TODO Result not used (and type wrong)
-		SPC_get_error_string(spcRet, spcErr, 100);
-	}
-
-	if (moduleInfo.init != OK)
-	{
-		// TODO In general, forcing does not seem like the right thing to do
-		// (if the module is in use by another app or another instance of
-		// OpenScan, we should show an error rather than force).
-		//
-		// Also, SPC_set_mode() cannot be correctly used here, because it
-		// initializes or deinitializes all modules on the system; there is no
-		// option to touch only the module of interest.
-		//
-		// Probably the best thing to do here is to use
-		// SPC_read_parameters_from_inifile() and SPC_set_parameters() if
-		// SPC_init() doesn't work due to having already been called _by us_.
-		// If SPC_set_parameters() fails, then another app is using the module
-		// and we should give up.
-		//
-		// This can be combined with calling SPC_close() at the moment we
-		// de-initialize the last remaining module, which in practice will
-		// allow SPC_init() to succeed most of the time anyway.
-
-		// the board is forced to be available to this program in harware mode
-		short force_use = 1;
-		// FIXME 3rd arg to SPC_set_mode must be int[8] (probable crash if we
-		// had multiple modules)
-		int active_board[1];
-		active_board[0] = 1;
-		spcRet = SPC_set_mode(SPC_HARD, force_use, active_board);
-
-		SPC_get_module_info(MODULE, (SPCModInfo *)&moduleInfo);
-		// FIXME Check the result?
-	}
+	// Note: The force-initialize code that used to be here was removed after
+	// testing to ensure it is not necessary (even after a crash).
 
 	g_BH_initialized = true;
 	return OScDev_OK;
@@ -141,12 +123,9 @@ static OScDev_Error DeinitializeFLIMBoard(void)
 	if (!g_BH_initialized)
 		return OScDev_OK;
 
-	// It is not possible to "close" or "de-initialize" a single module;
-	// the only provided function is SPC_close(void) which would de-init
-	// all modules.
-
-	// TODO It might be worth calling SPC_close() if and only if this is
-	// the last module being deinitialized.
+	// See comment where we call SPC_init(). We assume only one module is in
+	// use.
+	SPC_close();
 
 	g_BH_initialized = false;
 	return OScDev_OK;
@@ -220,6 +199,8 @@ static OScDev_Error BH_Open(OScDev_Device *device)
 	if (OScDev_CHECK(err, EnsureFLIMBoardInitialized()))
 		return err;
 
+	PopulateDefaultParameters(GetData(device));
+
 	// TODO There was previously a comment here suggesting that acquisitions
 	// that did not cleanly finish or a previous program crash could cause
 	// the module to remain "in use". Is this true? In any case, the following
@@ -238,14 +219,8 @@ static OScDev_Error BH_Open(OScDev_Device *device)
 		return OScDev_Error_Unknown; //TODO: OScDev_Error_SPC150_MODULE_NOT_ACTIVE
 	}
 
-	// read SPC150 parameters such as CFD, Sync, etc in a separate thread
-	// TODO: the issue starting monitor loop here is that if Stop Live is clicked
-	// i.e. stopRequested = true, the thread will exit and there is no way to restart it
-	// TODO What is the reason for stopping the loop when an acquisition
-	// finishes? Also, are we sure that SPC_read_rates() can be called from a
-	// background thread without disrupting other operations?
-	DWORD id;
-	GetData(device)->acquisition.monitorThread = CreateThread(NULL, 0, BH_Monitor_Loop, device, 0, &id);
+	DWORD threadId;
+	CreateThread(NULL, 0, RateCounterMonitoringLoop, device, 0, &threadId);
 
 	++g_openDeviceCount;
 
@@ -263,6 +238,13 @@ static OScDev_Error BH_Close(OScDev_Device *device)
 	while (acq->isRunning)
 		SleepConditionVariableCS(&acq->acquisitionFinishCondition, &acq->mutex, INFINITE);
 	LeaveCriticalSection(&acq->mutex);
+
+	struct BH_PrivateData *privData = GetData(device);
+	EnterCriticalSection(&privData->rateCountersMutex);
+	privData->rateCountersStopRequested = true;
+	while (privData->rateCountersRunning)
+		SleepConditionVariableCS(&privData->rateCountersStopCondition, &privData->rateCountersMutex, INFINITE);
+	LeaveCriticalSection(&privData->rateCountersMutex);
 
 	--g_openDeviceCount;
 

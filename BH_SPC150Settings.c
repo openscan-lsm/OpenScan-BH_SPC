@@ -81,26 +81,6 @@ static struct OScDev_SettingImpl SettingImpl_FLIMFinished = {
 };
 
 
-static OScDev_Error GetMonitoringFLIM(OScDev_Setting *setting, bool *value)
-{
-	*value = GetSettingDeviceData(setting)->monitoringFLIM;
-	return OScDev_OK;
-}
-
-
-static OScDev_Error SetMonitoringFLIM(OScDev_Setting *setting, bool value)
-{
-	GetSettingDeviceData(setting)->monitoringFLIM = value;
-	return OScDev_OK;
-}
-
-
-static struct OScDev_SettingImpl SettingImpl_MonitoringFLIM = {
-	.GetBool = GetMonitoringFLIM,
-	.SetBool = SetMonitoringFLIM,
-};
-
-
 static OScDev_Error GetAcqTime(OScDev_Setting *setting, int32_t *value)
 {
 	*value = GetSettingDeviceData(setting)->acqTime;
@@ -134,7 +114,9 @@ static struct OScDev_SettingImpl SettingImpl_BHAcqTime = {
 
 static OScDev_Error GetCFD(OScDev_Setting *setting, double *value)
 {
-	*value = GetSettingDeviceData(setting)->acquisition.cfd_value;
+	EnterCriticalSection(&GetSettingDeviceData(setting)->rateCountersMutex);
+	*value = GetSettingDeviceData(setting)->cfdRate;
+	LeaveCriticalSection(&GetSettingDeviceData(setting)->rateCountersMutex);
 	return OScDev_OK;
 }
 
@@ -164,7 +146,9 @@ static struct OScDev_SettingImpl SettingImpl_CFD = {
 
 static OScDev_Error GetSyncValue(OScDev_Setting *setting, double *value)
 {
-	*value = GetSettingDeviceData(setting)->acquisition.sync_value;
+	EnterCriticalSection(&GetSettingDeviceData(setting)->rateCountersMutex);
+	*value = GetSettingDeviceData(setting)->syncRate;
+	LeaveCriticalSection(&GetSettingDeviceData(setting)->rateCountersMutex);
 	return OScDev_OK;
 }
 
@@ -194,7 +178,9 @@ static struct OScDev_SettingImpl SettingImpl_Sync = {
 
 static OScDev_Error GetADC(OScDev_Setting *setting, double *value)
 {
-	*value = GetSettingDeviceData(setting)->acquisition.adc_value;
+	EnterCriticalSection(&GetSettingDeviceData(setting)->rateCountersMutex);
+	*value = GetSettingDeviceData(setting)->adcRate;
+	LeaveCriticalSection(&GetSettingDeviceData(setting)->rateCountersMutex);
 	return OScDev_OK;
 }
 
@@ -224,7 +210,9 @@ static struct OScDev_SettingImpl SettingImpl_ADC = {
 
 static OScDev_Error GetTAC(OScDev_Setting *setting, double *value)
 {
-	*value = GetSettingDeviceData(setting)->acquisition.tac_value;
+	EnterCriticalSection(&GetSettingDeviceData(setting)->rateCountersMutex);
+	*value = GetSettingDeviceData(setting)->tacRate;
+	LeaveCriticalSection(&GetSettingDeviceData(setting)->rateCountersMutex);
 	return OScDev_OK;
 }
 
@@ -272,11 +260,6 @@ OScDev_Error BH_SPC150PrepareSettings(OScDev_Device *device)
 	if (OScDev_CHECK(err, OScDev_Setting_Create(&flimFinished, "BH-FLIMFinished", OScDev_ValueType_Bool,
 		&SettingImpl_FLIMFinished, device)))
 		return err;
-	
-	OScDev_Setting *monitoringFLIM;
-	if (OScDev_CHECK(err, OScDev_Setting_Create(&monitoringFLIM, "BH-MonitoringFLIM", OScDev_ValueType_Bool,
-		&SettingImpl_MonitoringFLIM, device)))
-		return err;
 
 	OScDev_Setting *acqTime;
 	if (OScDev_CHECK(err, OScDev_Setting_Create(&acqTime, "BH_AcqTime", OScDev_ValueType_Int32,
@@ -306,7 +289,7 @@ OScDev_Error BH_SPC150PrepareSettings(OScDev_Device *device)
 
 
 	OScDev_Setting *ss[] = {
-		fileName, flimStarted, flimFinished, monitoringFLIM, acqTime,
+		fileName, flimStarted, flimFinished, acqTime,
 		cfd_value, sync_value, adc_value, tac_value,
 	};  // OSc_Device_Get_Settings() returns count = 1 when this has NULL inside
 	size_t nSettings = sizeof(ss) / sizeof(OScDev_Setting *);

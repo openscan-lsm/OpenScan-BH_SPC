@@ -27,10 +27,6 @@ struct AcqPrivateData
 	size_t width;
 	size_t height;
 	uint64_t pixelTime;
-	double cfd_value;
-	double sync_value;
-	double adc_value;
-	double tac_value;
 
 	CRITICAL_SECTION mutex;
 	CONDITION_VARIABLE acquisitionFinishCondition;
@@ -39,7 +35,6 @@ struct AcqPrivateData
 	bool started;    // true only if user starts FLIM acquisition
 	HANDLE thread;
 	HANDLE readoutThread;
-	HANDLE monitorThread;
 	short streamHandle;
 
 	bool wroteHeader;
@@ -65,8 +60,16 @@ struct BH_PrivateData
 
 	bool flimStarted;   // actual FLIM acquitiion starts when True
 	bool flimDone;
-	bool monitoringFLIM;  // set to true by default to monitor FLIM parameters since the beginning
 	uint32_t acqTime; //seconds
+
+	CRITICAL_SECTION rateCountersMutex;
+	CONDITION_VARIABLE rateCountersStopCondition;
+	bool rateCountersStopRequested;
+	bool rateCountersRunning;
+	double syncRate;
+	double cfdRate;
+	double tacRate;
+	double adcRate;
 
 	struct AcqPrivateData acquisition;
 };
