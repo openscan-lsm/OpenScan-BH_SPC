@@ -5,6 +5,7 @@
 
 struct OScDev_DeviceImpl BH_TCSCP150_Device_Impl;
 
+// TODO These functions should be static and prototypes can be in the source file
 unsigned short compute_checksum(void* hdr);
 OScDev_Error save_photons_in_file(struct AcqPrivateData *acq);
 OScDev_Error SaveHistogramAndIntensityImage(void *param);
