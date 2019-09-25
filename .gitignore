@@ -50,3 +50,6 @@ test-driver
 # Build
 Debug/
 Release/
+
+# Generated file
+generated_include/
