@@ -32,7 +32,6 @@ struct AcqPrivateData
 	CONDITION_VARIABLE acquisitionFinishCondition;
 	bool stopRequested;
 	bool isRunning;  // true if FLIM detector is armed
-	bool started;    // true only if user starts FLIM acquisition
 	HANDLE thread;
 	HANDLE readoutThread;
 	short streamHandle;
@@ -56,10 +55,6 @@ struct BH_PrivateData
 	OScDev_Setting **settings;
 	size_t settingCount;
 
-	bool settingsChanged;
-
-	bool flimStarted;   // actual FLIM acquitiion starts when True
-	bool flimDone;
 	uint32_t acqTime; //seconds
 
 	CRITICAL_SECTION rateCountersMutex;

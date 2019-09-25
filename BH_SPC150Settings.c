@@ -40,46 +40,6 @@ static struct OScDev_SettingImpl SettingImpl_FileName = {
 	.SetString = SetFileName,
 };
 
-static OScDev_Error GetFLIMStarted(OScDev_Setting *setting, bool *value)
-{
-	*value = GetSettingDeviceData(setting)->flimStarted;
-	return OScDev_OK;
-}
-
-
-static OScDev_Error SetFLIMStarted(OScDev_Setting *setting, bool value)
-{
-	GetSettingDeviceData(setting)->flimStarted = value;
-	GetSettingDeviceData(setting)->settingsChanged = true;
-	return OScDev_OK;
-}
-
-
-static struct OScDev_SettingImpl SettingImpl_FLIMStarted = {
-	.GetBool = GetFLIMStarted,
-	.SetBool = SetFLIMStarted,
-};
-
-
-static OScDev_Error GetFLIMFinished(OScDev_Setting *setting, bool *value)
-{
-	*value = GetSettingDeviceData(setting)->flimDone;
-	return OScDev_OK;
-}
-
-
-static OScDev_Error SetFLIMFinished(OScDev_Setting *setting, bool value)
-{
-	GetSettingDeviceData(setting)->flimDone = value;
-	return OScDev_OK;
-}
-
-
-static struct OScDev_SettingImpl SettingImpl_FLIMFinished = {
-	.GetBool = GetFLIMFinished,
-	.SetBool = SetFLIMFinished,
-};
-
 
 static OScDev_Error GetAcqTime(OScDev_Setting *setting, int32_t *value)
 {
@@ -91,7 +51,6 @@ static OScDev_Error GetAcqTime(OScDev_Setting *setting, int32_t *value)
 static OScDev_Error SetAcqTime(OScDev_Setting *setting, int32_t value)
 {
 	GetSettingDeviceData(setting)->acqTime = value;
-	GetSettingDeviceData(setting)->settingsChanged = true;
 	return OScDev_OK;
 }
 
@@ -251,16 +210,6 @@ OScDev_Error BH_SPC150PrepareSettings(OScDev_Device *device)
 		&SettingImpl_FileName, device)))
 		return err;
 
-	OScDev_Setting *flimStarted;
-	if (OScDev_CHECK(err, OScDev_Setting_Create(&flimStarted, "BH-StartFLIM", OScDev_ValueType_Bool,
-		&SettingImpl_FLIMStarted, device)))
-		return err;
-
-	OScDev_Setting *flimFinished;
-	if (OScDev_CHECK(err, OScDev_Setting_Create(&flimFinished, "BH-FLIMFinished", OScDev_ValueType_Bool,
-		&SettingImpl_FLIMFinished, device)))
-		return err;
-
 	OScDev_Setting *acqTime;
 	if (OScDev_CHECK(err, OScDev_Setting_Create(&acqTime, "BH_AcqTime", OScDev_ValueType_Int32,
 		&SettingImpl_BHAcqTime, device)))
@@ -289,7 +238,7 @@ OScDev_Error BH_SPC150PrepareSettings(OScDev_Device *device)
 
 
 	OScDev_Setting *ss[] = {
-		fileName, flimStarted, flimFinished, acqTime,
+		fileName, acqTime,
 		cfd_value, sync_value, adc_value, tac_value,
 	};  // OSc_Device_Get_Settings() returns count = 1 when this has NULL inside
 	size_t nSettings = sizeof(ss) / sizeof(OScDev_Setting *);

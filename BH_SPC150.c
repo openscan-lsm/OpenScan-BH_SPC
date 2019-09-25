@@ -55,10 +55,7 @@ static DWORD WINAPI RateCounterMonitoringLoop(void *param)
 
 static void PopulateDefaultParameters(struct BH_PrivateData *data)
 {
-	data->settingsChanged = true;
 	data->acqTime = 20;
-	data->flimStarted = false;
-	data->flimDone = false;
 
 	InitializeCriticalSection(&data->rateCountersMutex);
 	InitializeConditionVariable(&data->rateCountersStopCondition);
@@ -76,7 +73,6 @@ static void PopulateDefaultParameters(struct BH_PrivateData *data)
 	data->acquisition.thread = NULL;
 	data->acquisition.streamHandle = 0;
 	data->acquisition.isRunning = false;
-	data->acquisition.started = false;
 	data->acquisition.stopRequested = false;
 	data->acquisition.acquisition = NULL;
 }
@@ -234,7 +230,6 @@ static OScDev_Error BH_Close(OScDev_Device *device)
 	struct AcqPrivateData *acq = &GetData(device)->acquisition;
 	EnterCriticalSection(&acq->mutex);
 	acq->stopRequested = true;
-	GetData(device)->flimStarted = false; // reset for next run
 	while (acq->isRunning)
 		SleepConditionVariableCS(&acq->acquisitionFinishCondition, &acq->mutex, INFINITE);
 	LeaveCriticalSection(&acq->mutex);
@@ -451,35 +446,6 @@ static DWORD WINAPI BH_FIFO_Loop(void *param)
 	wordsRemaining = maxWordsToRead;
 	
 	strcpy(acq->photonFilename, "BH_photons.spc");//name will later be collected from user //FLIMTODO
-
-	// TODO The terminology here is too confusing. "started" apparently
-	// means that image acquisition is _enabled_ by the user, which has
-	// nothing to do with starting. In other words, "started" being false
-	// corresponds to not producing an image, which is a very buggy workaround
-	// (not currently allowed by OpenScanLib) used for viewing the rate
-	// counters only.
-	bool stopRequested;
-	while (true)
-	{
-		EnterCriticalSection(&(acq->mutex));
-		{	
-			stopRequested = acq->stopRequested;
-			acq->started = GetData(device)->flimStarted;
-		}
-		LeaveCriticalSection(&(acq->mutex));
-		if (acq->started)
-		{
-			OScDev_Log_Debug(device, "user started FLIM acquisition");
-			break;
-		}
-		if (stopRequested)
-		{
-			GetData(device)->flimStarted = false;  // reset to false for next run
-			OScDev_Log_Debug(device, "User interruption...");
-			break;
-		}
-		Sleep(100);
-	}
 	
 	// TODO: not sure if the loop should directly exit here if stop is reuqested?
 	short spcRet = SPC_start_measurement(GetData(device)->moduleNr);
@@ -493,16 +459,14 @@ static DWORD WINAPI BH_FIFO_Loop(void *param)
 	// TODO Probably better to sleep briefly before the 'continue' statements
 	// in the loop below. 1 ms?
 
-	GetData(device)->flimDone = false; 
 	while (!spcRet) 
 	{
 		EnterCriticalSection(&(acq->mutex));
-		stopRequested = acq->stopRequested;
+		bool stopRequested = acq->stopRequested;
 		LeaveCriticalSection(&(acq->mutex));
 		if (stopRequested)
 		{
 			OScDev_Log_Debug(device, "User interruption...Exiting FLIM acquisition loop...");
-			GetData(device)->flimStarted = false;  // reset for next run
 			break;
 		}
 
@@ -611,7 +575,6 @@ static void BH_FinishAcquisition(OScDev_Device *device)
 	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
 	EnterCriticalSection(&(acq->mutex));
 	acq->isRunning = false;
-	GetData(device)->flimStarted = false; // reset for next run
 	LeaveCriticalSection(&(acq->mutex));
 	CONDITION_VARIABLE *cv = &(acq->acquisitionFinishCondition);
 	WakeAllConditionVariable(cv);
@@ -985,8 +948,6 @@ OScDev_Error SaveHistogramAndIntensityImage(void *param)
 
 	OScDev_Log_Debug(device, "Finished writing SDT file");
 
-	GetData(device)->flimDone = true;
-
 	return OScDev_OK;
 }
 
@@ -1011,15 +972,11 @@ static OScDev_Error BH_Arm(OScDev_Device *device, OScDev_Acquisition *acq)
 		if (privAcq->isRunning)
 		{
 			LeaveCriticalSection(&(privAcq->mutex));
-			if (privAcq->started)
-				return OScDev_Error_Acquisition_Running;
-			else
-				return OScDev_OK;
+			return OScDev_Error_Acquisition_Running;
 		}
 		privAcq->stopRequested = false;
 		privAcq->isRunning = true;
 		privAcq->acquisition = acq;
-		privAcq->started = GetData(device)->flimStarted;  // only true if user set flimStarted to True
 	}
 	LeaveCriticalSection(&(privAcq->mutex));
 
