@@ -9,16 +9,23 @@ static inline struct BH_PrivateData *GetSettingDeviceData(OScDev_Setting *settin
 }
 
 
-OScDev_Error GetNumericConstraintTypeImpl_DiscreteValues(OScDev_Setting *setting, enum OScDev_ValueConstraint *constraintType)
+static OScDev_Error GetNumericConstraintTypeImpl_DiscreteValues(OScDev_Setting *setting, enum OScDev_ValueConstraint *constraintType)
 {
 	*constraintType = OScDev_ValueConstraint_DiscreteValues;
 	return OScDev_OK;
 }
 
 
-OScDev_Error GetNumericConstraintTypeImpl_Range(OScDev_Setting *setting, enum OScDev_ValueConstraint *constraintType)
+static OScDev_Error GetNumericConstraintTypeImpl_Range(OScDev_Setting *setting, enum OScDev_ValueConstraint *constraintType)
 {
 	*constraintType = OScDev_ValueConstraint_Range;
+	return OScDev_OK;
+}
+
+
+static OScDev_Error IsWritableImpl_ReadOnly(OScDev_Setting *setting, bool *writable)
+{
+	*writable = false;
 	return OScDev_OK;
 }
 
@@ -71,38 +78,6 @@ static struct OScDev_SettingImpl SettingImpl_BHAcqTime = {
 };
 
 
-static OScDev_Error GetCFD(OScDev_Setting *setting, double *value)
-{
-	EnterCriticalSection(&GetSettingDeviceData(setting)->rateCountersMutex);
-	*value = GetSettingDeviceData(setting)->cfdRate;
-	LeaveCriticalSection(&GetSettingDeviceData(setting)->rateCountersMutex);
-	return OScDev_OK;
-}
-
-
-static OScDev_Error SetCFD(OScDev_Setting *setting, double value)
-{
-	// read only
-	return OScDev_OK;
-}
-
-
-static OScDev_Error GetCFDRange(OScDev_Setting *setting, double *min, double *max)
-{
-	*min = 1.0;
-	*max = 1e8;
-	return OScDev_OK;
-}
-
-
-static struct OScDev_SettingImpl SettingImpl_CFD = {
-	.GetFloat64 = GetCFD,
-	.SetFloat64 = SetCFD,
-	.GetNumericConstraintType = GetNumericConstraintTypeImpl_Range,
-	.GetFloat64Range = GetCFDRange,
-};
-
-
 static OScDev_Error GetSyncValue(OScDev_Setting *setting, double *value)
 {
 	EnterCriticalSection(&GetSettingDeviceData(setting)->rateCountersMutex);
@@ -112,58 +87,24 @@ static OScDev_Error GetSyncValue(OScDev_Setting *setting, double *value)
 }
 
 
-static OScDev_Error SetSyncValue(OScDev_Setting *setting, double value)
-{
-	// read only
-	return OScDev_OK;
-}
-
-
-static OScDev_Error GetSyncValueRange(OScDev_Setting *setting, double *min, double *max)
-{
-	*min = 1.0;
-	*max = 1e8;
-	return OScDev_OK;
-}
-
-
 static struct OScDev_SettingImpl SettingImpl_Sync = {
 	.GetFloat64 = GetSyncValue,
-	.SetFloat64 = SetSyncValue,
-	.GetNumericConstraintType = GetNumericConstraintTypeImpl_Range,
-	.GetFloat64Range = GetSyncValueRange,
+	.IsWritable = IsWritableImpl_ReadOnly,
 };
 
 
-static OScDev_Error GetADC(OScDev_Setting *setting, double *value)
+static OScDev_Error GetCFD(OScDev_Setting *setting, double *value)
 {
 	EnterCriticalSection(&GetSettingDeviceData(setting)->rateCountersMutex);
-	*value = GetSettingDeviceData(setting)->adcRate;
+	*value = GetSettingDeviceData(setting)->cfdRate;
 	LeaveCriticalSection(&GetSettingDeviceData(setting)->rateCountersMutex);
 	return OScDev_OK;
 }
 
 
-static OScDev_Error SetADC(OScDev_Setting *setting, double value)
-{
-	// read only
-	return OScDev_OK;
-}
-
-
-static OScDev_Error GetADCRange(OScDev_Setting *setting, double *min, double *max)
-{
-	*min = 1.0;
-	*max = 1e8;
-	return OScDev_OK;
-}
-
-
-static struct OScDev_SettingImpl SettingImpl_ADC = {
-	.GetFloat64 = GetADC,
-	.SetFloat64 = SetADC,
-	.GetNumericConstraintType = GetNumericConstraintTypeImpl_Range,
-	.GetFloat64Range = GetADCRange,
+static struct OScDev_SettingImpl SettingImpl_CFD = {
+	.GetFloat64 = GetCFD,
+	.IsWritable = IsWritableImpl_ReadOnly,
 };
 
 
@@ -176,27 +117,26 @@ static OScDev_Error GetTAC(OScDev_Setting *setting, double *value)
 }
 
 
-static OScDev_Error SetTAC(OScDev_Setting *setting, double value)
-{
-	// read only
-	return OScDev_OK;
-}
-
-
-static OScDev_Error GetTACRange(OScDev_Setting *setting, double *min, double *max)
-{
-	*min = 1.0;
-	*max = 1e8;
-	return OScDev_OK;
-}
-
-
 static struct OScDev_SettingImpl SettingImpl_TAC = {
 	.GetFloat64 = GetTAC,
-	.SetFloat64 = SetTAC,
-	.GetNumericConstraintType = GetNumericConstraintTypeImpl_Range,
-	.GetFloat64Range = GetTACRange,
+	.IsWritable = IsWritableImpl_ReadOnly,
 };
+
+
+static OScDev_Error GetADC(OScDev_Setting *setting, double *value)
+{
+	EnterCriticalSection(&GetSettingDeviceData(setting)->rateCountersMutex);
+	*value = GetSettingDeviceData(setting)->adcRate;
+	LeaveCriticalSection(&GetSettingDeviceData(setting)->rateCountersMutex);
+	return OScDev_OK;
+}
+
+
+static struct OScDev_SettingImpl SettingImpl_ADC = {
+	.GetFloat64 = GetADC,
+	.IsWritable = IsWritableImpl_ReadOnly,
+};
+
 
 OScDev_Error BH_SPC150PrepareSettings(OScDev_Device *device)
 {
@@ -215,27 +155,25 @@ OScDev_Error BH_SPC150PrepareSettings(OScDev_Device *device)
 		&SettingImpl_BHAcqTime, device)))
 		return err;
 
-	OScDev_Setting *cfd_value;
-	if (OScDev_CHECK(err, OScDev_Setting_Create(&cfd_value, "BH_CFD", OScDev_ValueType_Float64,
-		&SettingImpl_CFD, device)))
-		return err;
-
 	OScDev_Setting *sync_value;
-	if (OScDev_CHECK(err, OScDev_Setting_Create(&sync_value, "BH_Sync", OScDev_ValueType_Float64,
+	if (OScDev_CHECK(err, OScDev_Setting_Create(&sync_value, "BH_SyncRate", OScDev_ValueType_Float64,
 		&SettingImpl_Sync, device)))
 		return err;
 
-	OScDev_Setting *adc_value;
-	if (OScDev_CHECK(err, OScDev_Setting_Create(&adc_value, "BH_ADC", OScDev_ValueType_Float64,
-		&SettingImpl_ADC, device)))
+	OScDev_Setting *cfd_value;
+	if (OScDev_CHECK(err, OScDev_Setting_Create(&cfd_value, "BH_CFDRate", OScDev_ValueType_Float64,
+		&SettingImpl_CFD, device)))
 		return err;
 
-
 	OScDev_Setting *tac_value;
-	if (OScDev_CHECK(err, OScDev_Setting_Create(&tac_value, "BH_TAC", OScDev_ValueType_Float64,
+	if (OScDev_CHECK(err, OScDev_Setting_Create(&tac_value, "BH_TACRate", OScDev_ValueType_Float64,
 		&SettingImpl_TAC, device)))
 		return err;
 
+	OScDev_Setting *adc_value;
+	if (OScDev_CHECK(err, OScDev_Setting_Create(&adc_value, "BH_ADCRate", OScDev_ValueType_Float64,
+		&SettingImpl_ADC, device)))
+		return err;
 
 	OScDev_Setting *ss[] = {
 		fileName, acqTime,
