@@ -3,7 +3,8 @@
 #include "BH_SPC150Private.h"
 
 
-struct OScDev_DeviceImpl BH_TCSCP150_Device_Impl;
+// TODO This shouldn't be in header
+OScDev_DeviceImpl BH_TCSCP150_Device_Impl;
 
 // TODO These functions should be static and prototypes can be in the source file
 unsigned short compute_checksum(void* hdr);

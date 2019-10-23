@@ -1,12 +1,11 @@
 #include "BH_SPC150.h"
 #include "BH_SPC150Private.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdint.h>
 
 static bool g_BH_initialized = false;
-static OScDev_Device **g_devices;
-static size_t g_deviceCount;
 static size_t g_openDeviceCount = 0;
 
 
@@ -128,7 +127,7 @@ static OScDev_Error DeinitializeFLIMBoard(void)
 }
 
 
-static OScDev_Error EnumerateInstances(OScDev_Device ***devices, size_t *count)
+static OScDev_Error BH_EnumerateInstances(OScDev_PtrArray **devices)
 {
 	// TODO SPC_test_id(0...7) can be used to get all modules present.
 	// We would then have the user supply a .ini file for each module,
@@ -150,10 +149,8 @@ static OScDev_Error EnumerateInstances(OScDev_Device ***devices, size_t *count)
 
 	PopulateDefaultParameters(GetData(device));
 
-	*devices = malloc(sizeof(OScDev_Device *));
-	*count = 1;
-	(*devices)[0] = device;
-
+	*devices = OScDev_PtrArray_Create();
+	OScDev_PtrArray_Append(*devices, device);
 	return OScDev_OK;
 }
 
@@ -161,17 +158,6 @@ static OScDev_Error EnumerateInstances(OScDev_Device ***devices, size_t *count)
 static OScDev_Error BH_GetModelName(const char **name)
 {
 	*name = "Becker & Hickl TCSCP150";
-	return OScDev_OK;
-}
-
-
-static OScDev_Error BH_GetInstances(OScDev_Device ***devices, size_t *count)
-{
-	OScDev_Error err;
-	if (!g_devices && OScDev_CHECK(err, EnumerateInstances(&g_devices, &g_deviceCount)))
-		return err;
-	*devices = g_devices;
-	*count = g_deviceCount;
 	return OScDev_OK;
 }
 
@@ -272,65 +258,19 @@ static OScDev_Error BH_HasClock (OScDev_Device *device, bool *hasDetector)
 }
 
 
-static OScDev_Error BH_GetSettings(OScDev_Device *device, OScDev_Setting ***settings, size_t *count)
+static OScDev_Error BH_GetPixelRates(OScDev_Device *device, OScDev_NumRange **pixelRatesHz)
 {
-	OScDev_Error err;
-	if (OScDev_CHECK(err, BH_SPC150PrepareSettings(device)))
-		return err;
-	*settings = GetData(device)->settings;
-	*count = GetData(device)->settingCount;
+	*pixelRatesHz = OScDev_NumRange_CreateDiscreteFromNaNTerminated(
+		(double[]){ 2e5, NAN });
 	return OScDev_OK;
 }
 
 
-static OScDev_Error BH_GetAllowedResolutions(OScDev_Device *device, size_t **widths, size_t **heights, size_t *count)
+static OScDev_Error BH_GetRasterSizes(OScDev_Device *device, OScDev_NumRange **sizes)
 {
-	// TODO If we are hard-coded to 256x256, we shouldn't allow anything else!
-	static size_t resolutions[] = { 256, 512, 1024, 2048 };
-	*widths = *heights = resolutions;
-	*count = sizeof(resolutions) / sizeof(size_t);
+	*sizes = OScDev_NumRange_CreateDiscreteFromNaNTerminated(
+		(double[]){ 256, NAN });
 	return OScDev_OK;
-}
-
-
-static OScDev_Error BH_GetResolution(OScDev_Device *device, size_t *width, size_t *height)
-{
-	SPCdata data;
-	short spcRet = SPC_get_parameters(GetData(device)->moduleNr, &data);
-	if (spcRet)
-		return OScDev_Error_Unknown;
-
-	// TODO Shouldn't be hard-coded!
-	*height = 256;
-	*width = 256;
-	return OScDev_OK;
-}
-
-
-static OScDev_Error BH_SetResolution(OScDev_Device *device, size_t width, size_t height)
-{
-	short spcRet = SPC_set_parameter(GetData(device)->moduleNr,
-		SCAN_SIZE_X, (float)width);
-	if (spcRet)
-		return OScDev_Error_Unknown;
-	spcRet = SPC_set_parameter(GetData(device)->moduleNr,
-		SCAN_SIZE_Y, (float)height);
-	if (spcRet)
-		return OScDev_Error_Unknown;
-	return OScDev_OK;
-}
-
-
-static OScDev_Error BH_GetImageSize(OScDev_Device *device, uint32_t *width, uint32_t *height)
-{
-	// Currently all image sizes match the current resolution
-	size_t w, h;
-	OScDev_Error err = BH_GetResolution(device, &w, &h);
-	if (err != OScDev_OK)
-		return err;
-	*width = (uint32_t)w;
-	*height = (uint32_t)h;
-	return err;
 }
 
 
@@ -961,7 +901,7 @@ static OScDev_Error BH_Arm(OScDev_Device *device, OScDev_Acquisition *acq)
 	if (useClock || useScanner || !useDetector)
 		return OScDev_Error_Unsupported_Operation;
 
-	enum OScDev_ClockSource clockSource;
+	OScDev_ClockSource clockSource;
 	OScDev_Acquisition_GetClockSource(acq, &clockSource);
 	if (clockSource != OScDev_ClockSource_External)
 		return OScDev_Error_Unsupported_Operation;
@@ -981,8 +921,16 @@ static OScDev_Error BH_Arm(OScDev_Device *device, OScDev_Acquisition *acq)
 	LeaveCriticalSection(&(privAcq->mutex));
 
 	short moduleNr = GetData(device)->moduleNr;
-	short state;
-	SPC_test_state(moduleNr, &state);
+
+	// TODO Variable size (here and elsewhere)
+	// It would make sense to set up SPC parameters before starting the loop
+	// thread.
+	short spcRet = SPC_set_parameter(moduleNr, SCAN_SIZE_X, 256.0f);
+	if (spcRet)
+		return OScDev_Error_Unknown;
+	spcRet = SPC_set_parameter(moduleNr, SCAN_SIZE_Y, 256.0f);
+	if (spcRet)
+		return OScDev_Error_Unknown;
 
 	DWORD id;
 	// FLIm acquisition thread
@@ -1061,9 +1009,9 @@ static OScDev_Error BH_Wait(OScDev_Device *device)
 }
 
 
-struct OScDev_DeviceImpl BH_TCSCP150_Device_Impl = {
+OScDev_DeviceImpl BH_TCSCP150_Device_Impl = {
 	.GetModelName = BH_GetModelName,
-	.GetInstances = BH_GetInstances,
+	.EnumerateInstances = BH_EnumerateInstances,
 	.ReleaseInstance = BH_ReleaseInstance,
 	.GetName = BH_GetName,
 	.Open = BH_Open,
@@ -1071,11 +1019,10 @@ struct OScDev_DeviceImpl BH_TCSCP150_Device_Impl = {
 	.HasScanner = BH_HasScanner,
 	.HasDetector = BH_HasDetector,
 	.HasClock = BH_HasClock,
-	.GetSettings = BH_GetSettings,
-	.GetAllowedResolutions = BH_GetAllowedResolutions,
-	.GetResolution = BH_GetResolution,
-	.SetResolution = BH_SetResolution,
-	.GetImageSize = BH_GetImageSize,
+	.MakeSettings = BH_MakeSettings,
+	.GetPixelRates = BH_GetPixelRates,
+	.GetRasterWidths = BH_GetRasterSizes,
+	.GetRasterHeights = BH_GetRasterSizes,
 	.GetNumberOfChannels = BH_GetNumberOfChannels,
 	.GetBytesPerSample = BH_GetBytesPerSample,
 	.Arm = BH_Arm,
@@ -1085,13 +1032,10 @@ struct OScDev_DeviceImpl BH_TCSCP150_Device_Impl = {
 	.Wait = BH_Wait,
 };
 
-static OScDev_Error GetDeviceImpls(struct OScDev_DeviceImpl **impls, size_t *implCount)
+static OScDev_Error GetDeviceImpls(OScDev_PtrArray **impls)
 {
-	if (*implCount < 1)
-		return OScDev_OK;
-
-	impls[0] = &BH_TCSCP150_Device_Impl;
-	*implCount = 1;
+	*impls = OScDev_PtrArray_CreateFromNullTerminated(
+		(OScDev_DeviceImpl *[]) { &BH_TCSCP150_Device_Impl, NULL });
 	return OScDev_OK;
 }
 

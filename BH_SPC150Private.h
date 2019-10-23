@@ -52,9 +52,6 @@ struct BH_PrivateData
 
 	char flimFileName[OScDev_MAX_STR_LEN + 1]; // for saving the raw data to hard drive
 
-	OScDev_Setting **settings;
-	size_t settingCount;
-
 	uint32_t acqTime; //seconds
 
 	CRITICAL_SECTION rateCountersMutex;
@@ -75,4 +72,4 @@ static inline struct BH_PrivateData *GetData(OScDev_Device *device)
 	return (struct BH_PrivateData *)OScDev_Device_GetImplData(device);
 }
 
-OScDev_Error BH_SPC150PrepareSettings(OScDev_Device *device);
+OScDev_Error BH_MakeSettings(OScDev_Device *device, OScDev_PtrArray **settings);
