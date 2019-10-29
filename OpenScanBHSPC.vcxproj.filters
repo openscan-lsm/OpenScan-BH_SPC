@@ -15,9 +15,6 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="BH_SPC150.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="BH_SPC150Private.h">
       <Filter>Header Files</Filter>
     </ClInclude>

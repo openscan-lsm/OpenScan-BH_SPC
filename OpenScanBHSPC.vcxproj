@@ -163,7 +163,6 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="BH_SPC150.h" />
     <ClInclude Include="BH_SPC150Private.h" />
   </ItemGroup>
   <ItemGroup>

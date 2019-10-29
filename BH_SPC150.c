@@ -1,4 +1,3 @@
-#include "BH_SPC150.h"
 #include "BH_SPC150Private.h"
 
 #include <math.h>
@@ -7,6 +6,16 @@
 
 static bool g_BH_initialized = false;
 static size_t g_openDeviceCount = 0;
+
+static OScDev_DeviceImpl BH_TCSPC150_Device_Impl; // Forward declaration
+
+// Forward declarations
+static unsigned short compute_checksum(void* hdr);
+static OScDev_Error save_photons_in_file(struct AcqPrivateData *acq);
+static OScDev_Error SaveHistogramAndIntensityImage(void *param);
+static OScDev_Error set_measurement_params();
+static void BH_FinishAcquisition(OScDev_Device *device);
+static OScDev_Error BH_WaitForAcquisitionToFinish(OScDev_Device *device);
 
 
 static DWORD WINAPI RateCounterMonitoringLoop(void *param)
@@ -140,7 +149,7 @@ static OScDev_Error BH_EnumerateInstances(OScDev_PtrArray **devices)
 
 	OScDev_Device *device;
 	OScDev_Error err;
-	if (OScDev_CHECK(err, OScDev_Device_Create(&device, &BH_TCSCP150_Device_Impl, data)))
+	if (OScDev_CHECK(err, OScDev_Device_Create(&device, &BH_TCSPC150_Device_Impl, data)))
 	{
 		char msg[OScDev_MAX_STR_LEN + 1] = "Failed to create device for BH SPC150";
 		OScDev_Log_Error(device, msg);
@@ -520,7 +529,7 @@ static void BH_FinishAcquisition(OScDev_Device *device)
 	WakeAllConditionVariable(cv);
 }
 
-OScDev_Error set_measurement_params() {
+static OScDev_Error set_measurement_params() {
 	// TODO Documentation says a call to SPC_configure_memory() is NOT
 	// required when operating in FIFO modes. Should remove this.
 
@@ -537,7 +546,7 @@ OScDev_Error set_measurement_params() {
 }
 
 
-OScDev_Error save_photons_in_file(struct AcqPrivateData *acq)
+static OScDev_Error save_photons_in_file(struct AcqPrivateData *acq)
 {
 	FILE *fp;
 	
@@ -589,7 +598,7 @@ OScDev_Error save_photons_in_file(struct AcqPrivateData *acq)
 }
 
 
-OScDev_Error SaveHistogramAndIntensityImage(void *param) 
+static OScDev_Error SaveHistogramAndIntensityImage(void *param) 
 {
 	OScDev_Device *device = (OScDev_Device *)param;
 	struct AcqPrivateData *acq = &(GetData(device)->acquisition);
@@ -1009,7 +1018,7 @@ static OScDev_Error BH_Wait(OScDev_Device *device)
 }
 
 
-OScDev_DeviceImpl BH_TCSCP150_Device_Impl = {
+static OScDev_DeviceImpl BH_TCSPC150_Device_Impl = {
 	.GetModelName = BH_GetModelName,
 	.EnumerateInstances = BH_EnumerateInstances,
 	.ReleaseInstance = BH_ReleaseInstance,
@@ -1035,7 +1044,7 @@ OScDev_DeviceImpl BH_TCSCP150_Device_Impl = {
 static OScDev_Error GetDeviceImpls(OScDev_PtrArray **impls)
 {
 	*impls = OScDev_PtrArray_CreateFromNullTerminated(
-		(OScDev_DeviceImpl *[]) { &BH_TCSCP150_Device_Impl, NULL });
+		(OScDev_DeviceImpl *[]) { &BH_TCSPC150_Device_Impl, NULL });
 	return OScDev_OK;
 }
 
