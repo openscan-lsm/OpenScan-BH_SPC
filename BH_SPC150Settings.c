@@ -23,6 +23,36 @@ static OScDev_Error GetNumericConstraintTypeImpl_Range(OScDev_Setting *setting, 
 }
 
 
+static OScDev_Error GetLineDelayPxRange(OScDev_Setting *setting, double *min, double *max)
+{
+	*min = -32.0;
+	*max = +32.0;
+	return OScDev_OK;
+}
+
+
+static OScDev_Error GetLineDelayPx(OScDev_Setting *setting, double *value)
+{
+	*value = GetSettingDeviceData(setting)->lineDelayPx;
+	return OScDev_OK;
+}
+
+
+static OScDev_Error SetLineDelayPx(OScDev_Setting *setting, double value)
+{
+	GetSettingDeviceData(setting)->lineDelayPx = value;
+	return OScDev_OK;
+}
+
+
+static OScDev_SettingImpl SettingImpl_LineDelayPx = {
+	.GetNumericConstraintType = GetNumericConstraintTypeImpl_Range,
+	.GetFloat64Range = GetLineDelayPxRange,
+	.GetFloat64 = GetLineDelayPx,
+	.SetFloat64 = SetLineDelayPx,
+};
+
+
 static OScDev_Error IsWritableImpl_ReadOnly(OScDev_Setting *setting, bool *writable)
 {
 	*writable = false;
@@ -30,51 +60,23 @@ static OScDev_Error IsWritableImpl_ReadOnly(OScDev_Setting *setting, bool *writa
 }
 
 
-static OScDev_Error GetFileName(OScDev_Setting *setting, char *value)
- {
-	strcpy(value, GetSettingDeviceData(setting)->flimFileName);
-	return OScDev_OK;
-	}
-
-static OScDev_Error SetFileName(OScDev_Setting *setting, const char *value)
- {
-	strcpy(GetSettingDeviceData(setting)->flimFileName, value);
-	return OScDev_OK;
-	}
-
-static OScDev_SettingImpl SettingImpl_FileName = {
-	.GetString = GetFileName,
-	.SetString = SetFileName,
-};
-
-
-static OScDev_Error GetAcqTime(OScDev_Setting *setting, int32_t *value)
+static OScDev_Error GetSPCFilename(OScDev_Setting *setting, char *value)
 {
-	*value = GetSettingDeviceData(setting)->acqTime;
+	strcpy(value, GetSettingDeviceData(setting)->spcFilename);
 	return OScDev_OK;
 }
 
 
-static OScDev_Error SetAcqTime(OScDev_Setting *setting, int32_t value)
+static OScDev_Error SetSPCFilename(OScDev_Setting *setting, const char *value)
 {
-	GetSettingDeviceData(setting)->acqTime = value;
+	strcpy(GetSettingDeviceData(setting)->spcFilename, value);
 	return OScDev_OK;
 }
 
 
-static OScDev_Error GetAcqTimeRange(OScDev_Setting *setting, int32_t *min, int32_t *max)
-{
-	*min = 1;
-	*max = 3600;  // 1 hour
-	return OScDev_OK;
-}
-
-
-static OScDev_SettingImpl SettingImpl_BHAcqTime = {
-	.GetInt32 = GetAcqTime,
-	.SetInt32 = SetAcqTime,
-	.GetNumericConstraintType = GetNumericConstraintTypeImpl_Range,
-	.GetInt32Range = GetAcqTimeRange,
+static OScDev_SettingImpl SettingImpl_SPCFilename = {
+	.GetString = GetSPCFilename,
+	.SetString = SetSPCFilename,
 };
 
 
@@ -143,17 +145,17 @@ OScDev_Error BH_MakeSettings(OScDev_Device *device, OScDev_PtrArray **settings)
 	OScDev_Error err = OScDev_OK;
 	*settings = OScDev_PtrArray_Create();
 
-	OScDev_Setting *fileName;
-	if (OScDev_CHECK(err, OScDev_Setting_Create(&fileName, "BH-FileName", OScDev_ValueType_String,
-		&SettingImpl_FileName, device)))
+	OScDev_Setting *lineDelayPx;
+	if (OScDev_CHECK(err, OScDev_Setting_Create(&lineDelayPx, "LineDelay_px", OScDev_ValueType_Float64,
+		&SettingImpl_LineDelayPx, device)))
 		goto error;
-	OScDev_PtrArray_Append(*settings, fileName);
+	OScDev_PtrArray_Append(*settings, lineDelayPx);
 
-	OScDev_Setting *acqTime;
-	if (OScDev_CHECK(err, OScDev_Setting_Create(&acqTime, "BH_AcqTime", OScDev_ValueType_Int32,
-		&SettingImpl_BHAcqTime, device)))
+	OScDev_Setting *spcFilename;
+	if (OScDev_CHECK(err, OScDev_Setting_Create(&spcFilename, "SPCFilename", OScDev_ValueType_String,
+		&SettingImpl_SPCFilename, device)))
 		goto error;
-	OScDev_PtrArray_Append(*settings, acqTime);
+	OScDev_PtrArray_Append(*settings, spcFilename);
 
 	OScDev_Setting *sync_value;
 	if (OScDev_CHECK(err, OScDev_Setting_Create(&sync_value, "BH_SyncRate", OScDev_ValueType_Float64,

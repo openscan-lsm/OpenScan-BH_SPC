@@ -1,6 +1,6 @@
 #pragma once
 
-#include "OpenScanDeviceLib.h"
+#include <OpenScanDeviceLib.h>
 
 #include <Spcm_def.h>
 
@@ -16,43 +16,12 @@
 #pragma pack(pop)
 
 
-// TODO Module number should not be hard-coded!
-#define MODULE					 0
-
-struct AcqPrivateData
-{
-	OScDev_Acquisition *acquisition;
-
-	uint16_t *frameBuffer;
-	size_t width;
-	size_t height;
-	uint64_t pixelTime;
-
-	CRITICAL_SECTION mutex;
-	CONDITION_VARIABLE acquisitionFinishCondition;
-	bool stopRequested;
-	bool isRunning;  // true if FLIM detector is armed
-	HANDLE thread;
-	HANDLE readoutThread;
-	short streamHandle;
-
-	bool wroteHeader;
-
-	short fifoType;
-	unsigned long bufferDataSizeWords;
-	unsigned short *buffer;
-	bool firstWrite;
-	char photonFilename[80];
-};
+struct AcqState; // Defined in C++
 
 
 struct BH_PrivateData
 {
 	short moduleNr;
-
-	char flimFileName[OScDev_MAX_STR_LEN + 1]; // for saving the raw data to hard drive
-
-	uint32_t acqTime; //seconds
 
 	CRITICAL_SECTION rateCountersMutex;
 	CONDITION_VARIABLE rateCountersStopCondition;
@@ -63,7 +32,15 @@ struct BH_PrivateData
 	double tacRate;
 	double adcRate;
 
-	struct AcqPrivateData acquisition;
+	double lineDelayPx;
+	char spcFilename[256];
+
+	// C++ data for a single acquisition. Access to this pointer is not
+	// protected by a mutex (i.e. relies on synchronization by OpenScanLib and
+	// application). Thus, although we create a new AcqState for each
+	// acquisition, the old AcqState must only be deallocated in the context
+	// of a call from OpenScanLib.
+	struct AcqState *acqState;
 };
 
 

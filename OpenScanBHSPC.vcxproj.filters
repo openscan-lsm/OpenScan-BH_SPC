@@ -18,12 +18,30 @@
     <ClInclude Include="BH_SPC150Private.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="AcquisitionControl.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="FIFOAcquisition.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DataStream.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="BH_SPC150.c">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="BH_SPC150Settings.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DataStream.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="FIFOAcquisition.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="AcquisitionControl.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
