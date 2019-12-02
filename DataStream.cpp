@@ -44,7 +44,7 @@ namespace {
 // Header for spcFile should be written by caller ahead of time.
 std::tuple<std::shared_ptr<EventStream<BHSPCEvent>>, std::shared_future<void>>
 SetUpProcessing(uint32_t width, uint32_t height, uint32_t maxFrames,
-	int32_t lineDelay, uint32_t lineTime,
+	int32_t lineDelay, uint32_t lineTime, uint32_t lineMarkerBit,
 	OScDev_Acquisition* acquisition, std::function<void()> stopFunc,
 	std::ostream& spcFile)
 {
@@ -57,7 +57,7 @@ SetUpProcessing(uint32_t width, uint32_t height, uint32_t maxFrames,
 	auto sink = std::make_shared<DataSink>([stopFunc] {stopFunc(); }, acquisition);
 
 	auto processor =
-		std::make_shared<LineClockPixellator>(width, height, maxFrames, lineDelay, lineTime,
+		std::make_shared<LineClockPixellator>(width, height, maxFrames, lineDelay, lineTime, lineMarkerBit,
 			std::make_shared<Histogrammer<SampleType>>(std::move(frameHisto),
 				std::make_shared<HistogramAccumulator<SampleType>>(std::move(cumulHisto),
 				sink)));

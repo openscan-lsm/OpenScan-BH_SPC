@@ -68,6 +68,14 @@ static void PopulateDefaultParameters(struct BH_PrivateData *data)
 	data->tacRate = 0.0;
 	data->adcRate = 0.0;
 
+	for (int i = 0; i < NUM_MARKER_BITS; ++i) {
+		data->markerActiveEdges[i] = MarkerPolarityRisingEdge;
+	}
+	data->pixelMarkerBit = -1;
+	data->lineMarkerBit = 1;
+	data->frameMarkerBit = 2;
+
+	data->pixelMappingMode = PixelMappingModeLineEndMarkers;
 	data->lineDelayPx = 0.0;
 	strcpy(data->spcFilename, "BH_photons.spc");
 }

@@ -15,6 +15,6 @@
 
 std::tuple<std::shared_ptr<EventStream<BHSPCEvent>>, std::shared_future<void>>
 SetUpProcessing(uint32_t width, uint32_t height, uint32_t maxFrames,
-	int32_t lineDelay, uint32_t lineTime,
+	int32_t lineDelay, uint32_t lineTime, uint32_t lineMarkerBit,
 	OScDev_Acquisition* acquisition, std::function<void()> stopFunc,
 	std::ostream& spcFile);

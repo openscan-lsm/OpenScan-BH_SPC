@@ -60,9 +60,7 @@ int ConfigureDeviceForFIFOAcquisition(short module)
 
 	// Bits  8-11: enable marker
 	// Bits 12-15: marker polarity (1 = rising)
-	// TODO User should select rising/falling/disable for each of 4 markers
-	// TODO User should also select which marker to use as line marker
-	// For now, enable all 4 markers at rising edge.
+	// See also SetMarkerPolarities()
 	parameters.routing_mode = 0xff00;
 
 	// The following parameters are not relevant, but clear them to avoid
@@ -75,6 +73,31 @@ int ConfigureDeviceForFIFOAcquisition(short module)
 	parameters.adc_zoom = 0; // Not relevant in FIFO mode
 
 	err = SPC_set_parameters(module, &parameters);
+	if (err < 0) {
+		return err;
+	}
+
+	return 0;
+}
+
+
+int SetMarkerPolarities(short module, uint16_t enabledBits, uint16_t polarityBits)
+{
+	float value;
+	short err = SPC_get_parameter(module, ROUTING_MODE, &value);
+	if (err < 0) {
+		return err;
+	}
+
+	// Bits  8-11: enable marker
+	// Bits 12-15: marker polarity (1 = rising)
+	uint16_t mask = static_cast<uint16_t>(value);
+	mask &= ~0xff00;
+	mask |= (enabledBits & 0xf) << 8;
+	mask |= (polarityBits & 0xf) << 12;
+	value = mask;
+
+	err = SPC_set_parameter(module, ROUTING_MODE, value);
 	if (err < 0) {
 		return err;
 	}

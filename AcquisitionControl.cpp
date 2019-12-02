@@ -3,6 +3,7 @@
 #include "DataStream.hpp"
 #include "FIFOAcquisition.hpp"
 
+#include <bitset>
 #include <cmath>
 #include <chrono>
 #include <fstream>
@@ -88,6 +89,52 @@ static int32_t PixelsToMacroTime(double pixels, double pixelRateHz, uint32_t uni
 }
 
 
+static int ConfigureMarkers(OScDev_Device* device)
+{
+	auto data = GetData(device);
+	uint16_t enabled = 0;
+	uint16_t risingEdgeActive = 0;
+	for (int i = 0; i < NUM_MARKER_BITS; ++i) {
+		enabled |= (data->markerActiveEdges[i] != MarkerPolarityDisabled) << i;
+		risingEdgeActive |= (data->markerActiveEdges[i] == MarkerPolarityRisingEdge) << i;
+	}
+	return SetMarkerPolarities(data->moduleNr, enabled, risingEdgeActive);
+}
+
+
+static int CheckMarkers(OScDev_Device* device)
+{
+	auto data = GetData(device);
+
+	// Pixel, line, and frame markers must all differ if enabled
+	std::bitset<NUM_MARKER_BITS> usedMarkers;
+	if (data->pixelMarkerBit < NUM_MARKER_BITS) {
+		usedMarkers.set(data->pixelMarkerBit);
+	}
+	if (data->lineMarkerBit < NUM_MARKER_BITS) {
+		if (usedMarkers.test(data->lineMarkerBit)) {
+			return 1; // Duplicate marker assignment
+		}
+		usedMarkers.set(data->lineMarkerBit);
+	}
+	if (data->frameMarkerBit < NUM_MARKER_BITS) {
+		if (usedMarkers.test(data->frameMarkerBit)) {
+			return 1; // Duplicate marker assignment
+		}
+	}
+
+	// Line marker must be assigned and enabled (until we support pixel marker)
+	if (data->lineMarkerBit >= NUM_MARKER_BITS) {
+		return 1; // Line marker required
+	}
+	if (data->markerActiveEdges[data->lineMarkerBit] == MarkerPolarityDisabled) {
+		return 1; // Line marker required
+	}
+
+	return 0;
+}
+
+
 extern "C"
 int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 {
@@ -95,6 +142,15 @@ int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 	if (err != 0)
 		return err;
 	auto acqState = GetData(device)->acqState;
+
+	err = ConfigureMarkers(device);
+	if (err != 0)
+		return err;
+
+	err = CheckMarkers(device);
+	if (err != 0)
+		return err;
+	uint32_t lineMarkerBit = GetData(device)->lineMarkerBit;
 
 	uint32_t nFrames = OScDev_Acquisition_GetNumberOfFrames(acq);
 	double pixelRateHz = OScDev_Acquisition_GetPixelRate(acq);
@@ -144,7 +200,7 @@ int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 		acqState->requestStop.get_future().share();
 
 	auto stream_finish = SetUpProcessing(width, height, nFrames,
-		lineDelay, lineTime, acq,
+		lineDelay, lineTime, lineMarkerBit, acq,
 		[acqState]() mutable { RequestAcquisitionStop(acqState); },
 		*spcFile);
 	auto& stream = std::get<0>(stream_finish);
