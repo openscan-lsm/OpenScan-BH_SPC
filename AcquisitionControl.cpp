@@ -82,9 +82,9 @@ void ShutdownAcquisitionState(OScDev_Device* device)
 }
 
 
-static uint32_t PixelsToMacroTime(double pixels, double pixelRateHz, uint32_t unitsTenthNs)
+static int32_t PixelsToMacroTime(double pixels, double pixelRateHz, uint32_t unitsTenthNs)
 {
-	return static_cast<uint32_t>(std::round(1e10 * pixels / pixelRateHz / unitsTenthNs));
+	return static_cast<int32_t>(std::round(1e10 * pixels / pixelRateHz / unitsTenthNs));
 }
 
 
@@ -100,6 +100,18 @@ int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 	double pixelRateHz = OScDev_Acquisition_GetPixelRate(acq);
 	uint32_t xOffset, yOffset, width, height;
 	OScDev_Acquisition_GetROI(acq, &xOffset, &yOffset, &width, &height);
+
+	bool lineMarkersAtLineEnds;
+	switch (GetData(device)->pixelMappingMode) {
+	case PixelMappingModeLineStartMarkers:
+		lineMarkersAtLineEnds = false;
+		break;
+	case PixelMappingModeLineEndMarkers:
+		lineMarkersAtLineEnds = true;
+		break;
+	default:
+		return 1; // Unimplemented mode
+	}
 	double lineDelayPixels = GetData(device)->lineDelayPx;
 	std::string spcFilename(GetData(device)->spcFilename);
 
@@ -115,7 +127,10 @@ int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 	}
 
 	uint32_t lineTime = PixelsToMacroTime(width, pixelRateHz, macroTimeUnitsTenthNs);
-	uint32_t lineDelay = PixelsToMacroTime(lineDelayPixels, pixelRateHz, macroTimeUnitsTenthNs);
+	int32_t lineDelay = PixelsToMacroTime(lineDelayPixels, pixelRateHz, macroTimeUnitsTenthNs);
+	if (lineMarkersAtLineEnds) {
+		lineDelay -= lineTime;
+	}
 
 	auto pool = std::make_shared<EventBufferPool<BHSPCEvent>>(48 * 1024);
 

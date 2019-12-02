@@ -23,10 +23,79 @@ static OScDev_Error GetNumericConstraintTypeImpl_Range(OScDev_Setting *setting, 
 }
 
 
+static OScDev_Error IsWritableImpl_ReadOnly(OScDev_Setting *setting, bool *writable)
+{
+	*writable = false;
+	return OScDev_OK;
+}
+
+
+static OScDev_Error GetPixelMappingModeNumValues(OScDev_Setting *setting, uint32_t *count)
+{
+	*count = PixelMappingModeNumValues;
+	return OScDev_OK;
+}
+
+
+static OScDev_Error GetPixelMappingModeNameForValue(OScDev_Setting *setting, uint32_t value, char *name)
+{
+	switch (value) {
+	case PixelMappingModeLineStartMarkers:
+		strcpy(name, "LineStartMarkers");
+		break;
+	case PixelMappingModeLineEndMarkers:
+		strcpy(name, "LineEndMarkers");
+		break;
+	default:
+		return OScDev_Error_Illegal_Argument;
+	}
+	return OScDev_OK;
+}
+
+
+static OScDev_Error GetPixelMappingModeValueForName(OScDev_Setting *setting, uint32_t *value, const char *name)
+{
+	if (strcmp(name, "LineStartMarkers") == 0) {
+		*value = PixelMappingModeLineStartMarkers;
+	}
+	else if (strcmp(name, "LineEndMarkers") == 0) {
+		*value = PixelMappingModeLineEndMarkers;
+	}
+	else {
+		return OScDev_Error_Illegal_Argument;
+	}
+	return OScDev_OK;
+}
+
+
+static OScDev_Error GetPixelMappingMode(OScDev_Setting *setting, uint32_t *value)
+{
+	*value = GetSettingDeviceData(setting)->pixelMappingMode;
+	return OScDev_OK;
+}
+
+
+static OScDev_Error SetPixelMappingMode(OScDev_Setting *setting, uint32_t value)
+{
+	GetSettingDeviceData(setting)->pixelMappingMode = value;
+	return OScDev_OK;
+}
+
+
+static OScDev_SettingImpl SettingImpl_PixelMappingMode = {
+	.GetEnumNumValues = GetPixelMappingModeNumValues,
+	.GetEnumNameForValue = GetPixelMappingModeNameForValue,
+	.GetEnumValueForName = GetPixelMappingModeValueForName,
+	.GetEnum = GetPixelMappingMode,
+	.SetEnum = SetPixelMappingMode,
+};
+
+
 static OScDev_Error GetLineDelayPxRange(OScDev_Setting *setting, double *min, double *max)
 {
-	*min = -32.0;
-	*max = +32.0;
+	// This is just an arbitrary, generous range
+	*min = -1000.0;
+	*max = +1000.0;
 	return OScDev_OK;
 }
 
@@ -51,13 +120,6 @@ static OScDev_SettingImpl SettingImpl_LineDelayPx = {
 	.GetFloat64 = GetLineDelayPx,
 	.SetFloat64 = SetLineDelayPx,
 };
-
-
-static OScDev_Error IsWritableImpl_ReadOnly(OScDev_Setting *setting, bool *writable)
-{
-	*writable = false;
-	return OScDev_OK;
-}
 
 
 static OScDev_Error GetSPCFilename(OScDev_Setting *setting, char *value)
@@ -144,6 +206,12 @@ OScDev_Error BH_MakeSettings(OScDev_Device *device, OScDev_PtrArray **settings)
 {
 	OScDev_Error err = OScDev_OK;
 	*settings = OScDev_PtrArray_Create();
+
+	OScDev_Setting *pixelMappingMode;
+	if (OScDev_CHECK(err, OScDev_Setting_Create(&pixelMappingMode, "PixelMappingMode", OScDev_ValueType_Enum,
+		&SettingImpl_PixelMappingMode, device)))
+		goto error;
+	OScDev_PtrArray_Append(*settings, pixelMappingMode);
 
 	OScDev_Setting *lineDelayPx;
 	if (OScDev_CHECK(err, OScDev_Setting_Create(&lineDelayPx, "LineDelay_px", OScDev_ValueType_Float64,

@@ -19,6 +19,14 @@
 struct AcqState; // Defined in C++
 
 
+enum PixelMappingMode {
+	PixelMappingModeLineStartMarkers,
+	PixelMappingModeLineEndMarkers,
+	// In future, add pixel marker modes
+	PixelMappingModeNumValues,
+};
+
+
 struct BH_PrivateData
 {
 	short moduleNr;
@@ -32,6 +40,7 @@ struct BH_PrivateData
 	double tacRate;
 	double adcRate;
 
+	enum PixelMappingMode pixelMappingMode;
 	double lineDelayPx;
 	char spcFilename[256];
 
