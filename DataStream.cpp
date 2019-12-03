@@ -66,15 +66,14 @@ SetUpProcessing(uint32_t width, uint32_t height, uint32_t maxFrames,
 	decoder->SetDownstream(processor);
 
 	auto stream = std::make_shared<EventStream<BHSPCEvent>>();
-	auto done = std::async(std::launch::async, [stream, decoder, processor, &spcFile] {
+	auto done = std::async(std::launch::async, [stream, decoder, &spcFile] {
 		for (;;) {
 			std::shared_ptr<EventBuffer<BHSPCEvent>> buffer;
 			try {
 				buffer = stream->ReceiveBlocking();
 			}
 			catch (std::exception const& e) {
-				// Decoder doesn't have error propagation, so bypass
-				processor->HandleError(e.what());
+				decoder->HandleError(e.what());
 				break;
 			}
 
