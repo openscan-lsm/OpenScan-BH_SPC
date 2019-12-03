@@ -44,5 +44,8 @@
     <ClCompile Include="AcquisitionControl.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="SPCFileWriter.hpp">
+      <Filter>Header Files</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

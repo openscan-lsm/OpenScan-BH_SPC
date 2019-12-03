@@ -2,6 +2,7 @@
 
 #include "DataStream.hpp"
 #include "FIFOAcquisition.hpp"
+#include "SPCFileWriter.hpp"
 
 #include <bitset>
 #include <cmath>
@@ -188,30 +189,29 @@ int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 		lineDelay -= lineTime;
 	}
 
-	auto pool = std::make_shared<EventBufferPool<BHSPCEvent>>(48 * 1024);
-
-	auto spcFile = std::make_shared<std::fstream>(spcFilename, std::fstream::binary | std::fstream::out);
-	if (!spcFile->good()) {
-		return 1; // Cannot open spc data file
+	auto spcFile = std::make_shared<SPCFileWriter>(spcFilename, fileHeader);
+	if (!spcFile->IsValid()) {
+		return 1; // Cannot open spc file
 	}
-	spcFile->write(fileHeader, sizeof(fileHeader));
-	
-	std::shared_future<void> stopRequested =
-		acqState->requestStop.get_future().share();
 
 	auto stream_finish = SetUpProcessing(width, height, nFrames,
 		lineDelay, lineTime, lineMarkerBit, acq,
 		[acqState]() mutable { RequestAcquisitionStop(acqState); },
-		*spcFile);
+		spcFile);
 	auto& stream = std::get<0>(stream_finish);
 	auto dataFinished = std::get<1>(stream_finish);
+
+	// 48k events = ~5 ms at 10M events/s
+	auto pool = std::make_shared<EventBufferPool<BHSPCEvent>>(48 * 1024);
+
+	std::shared_future<void> stopRequested =
+		acqState->requestStop.get_future().share();
 
 	auto acqFinished = StartAcquisitionStandardFIFO(GetData(device)->moduleNr,
 		pool, stream, stopRequested).share();
 
-	acqState->finish = std::async(std::launch::async, [dataFinished, acqFinished, spcFile]() {
+	acqState->finish = std::async(std::launch::async, [dataFinished, acqFinished]() {
 		dataFinished.get();
-		spcFile->close(); // (Actually we could just let this go out of scope)
 		acqFinished.get();
 	}).share();
 

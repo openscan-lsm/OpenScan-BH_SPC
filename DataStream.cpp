@@ -46,7 +46,7 @@ std::tuple<std::shared_ptr<EventStream<BHSPCEvent>>, std::shared_future<void>>
 SetUpProcessing(uint32_t width, uint32_t height, uint32_t maxFrames,
 	int32_t lineDelay, uint32_t lineTime, uint32_t lineMarkerBit,
 	OScDev_Acquisition* acquisition, std::function<void()> stopFunc,
-	std::ostream& spcFile)
+	std::shared_ptr<SPCFileWriter> spcFile)
 {
 	int32_t inputBits = 12;
 	int32_t histoBits = 0; // Intensity image
@@ -62,11 +62,10 @@ SetUpProcessing(uint32_t width, uint32_t height, uint32_t maxFrames,
 				std::make_shared<HistogramAccumulator<SampleType>>(std::move(cumulHisto),
 				sink)));
 
-	auto decoder = std::make_shared<BHSPCEventDecoder>();
-	decoder->SetDownstream(processor);
+	auto decoder = std::make_shared<BHSPCEventDecoder>(processor);
 
 	auto stream = std::make_shared<EventStream<BHSPCEvent>>();
-	auto done = std::async(std::launch::async, [stream, decoder, &spcFile] {
+	auto done = std::async(std::launch::async, [stream, decoder, spcFile] {
 		for (;;) {
 			std::shared_ptr<EventBuffer<BHSPCEvent>> buffer;
 			try {
@@ -74,25 +73,19 @@ SetUpProcessing(uint32_t width, uint32_t height, uint32_t maxFrames,
 			}
 			catch (std::exception const& e) {
 				decoder->HandleError(e.what());
+				spcFile->HandleError(e.what());
 				break;
 			}
 
 			if (!buffer) {
 				decoder->HandleFinish();
+				spcFile->HandleFinish();
 				break;
 			}
 
-			decoder->HandleDeviceEvents(buffer->GetData(), buffer->GetSize());
-
-			// Note: the processor may have stopped the acquisition based on
-			// seeing this data. We do not make any attempt to stop writing the
-			// event data exactly where the processor decides to stop, so
-			// typically there will be some extra data written beyond where the
-			// decision to stop was made. This should not be an issue as long
-			// as the raw event file is processed by well-written code, but it
-			// may become desirable to stop the file at an exact photon.
-			spcFile.write(reinterpret_cast<char const*>(buffer->GetData()),
-				buffer->GetSize() * decoder->GetEventSize());
+			char const* data = reinterpret_cast<char const*>(buffer->GetData());
+			decoder->HandleDeviceEvents(data, buffer->GetSize());
+			spcFile->HandleDeviceEvents(data, buffer->GetSize());
 		}
 	});
 

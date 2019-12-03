@@ -178,6 +178,7 @@
     <ClCompile Include="BH_SPC150.c" />
     <ClCompile Include="BH_SPC150Settings.c" />
     <ClCompile Include="DataStream.cpp" />
+    <ClCompile Include="SPCFileWriter.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
