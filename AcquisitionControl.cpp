@@ -194,10 +194,11 @@ int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 		return 1; // Cannot open spc file
 	}
 
+	// TODO Handle bad_alloc if we cannot allocate histogram memory
 	auto stream_finish = SetUpProcessing(width, height, nFrames,
 		lineDelay, lineTime, lineMarkerBit, acq,
 		[acqState]() mutable { RequestAcquisitionStop(acqState); },
-		spcFile);
+		std::static_pointer_cast<DeviceEventProcessor>(spcFile));
 	auto& stream = std::get<0>(stream_finish);
 	auto dataFinished = std::get<1>(stream_finish);
 

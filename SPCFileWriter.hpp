@@ -6,7 +6,7 @@
 
 
 // Write .spc file with standard 4-byte format
-class SPCFileWriter final : DeviceEventProcessor {
+class SPCFileWriter final : public DeviceEventProcessor {
 	std::fstream file;
 
 public:

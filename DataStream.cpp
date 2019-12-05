@@ -2,6 +2,8 @@
 
 #include <FLIMEvents/Histogram.hpp>
 
+#include <array>
+
 
 using SampleType = uint16_t;
 
@@ -34,6 +36,37 @@ namespace {
 }
 
 
+template <typename E, unsigned N>
+static void PumpDeviceEvents(std::shared_ptr<EventStream<E>> stream,
+	std::array<std::shared_ptr<DeviceEventProcessor>, N> processors)
+{
+	for (;;) {
+		std::shared_ptr<EventBuffer<E>> buffer;
+		try {
+			buffer = stream->ReceiveBlocking();
+		}
+		catch (std::exception const& e) {
+			for (auto& p : processors) {
+				p->HandleError(e.what());
+			}
+			break;
+		}
+
+		if (!buffer) {
+			for (auto& p : processors) {
+				p->HandleFinish();
+			}
+			break;
+		}
+
+		char const* data = reinterpret_cast<char const*>(buffer->GetData());
+		for (auto& p : processors) {
+			p->HandleDeviceEvents(data, buffer->GetSize());
+		}
+	}
+}
+
+
 // Returns:
 //   0: stream to which events should be sent
 //   1: future indicating end of processing
@@ -46,7 +79,7 @@ std::tuple<std::shared_ptr<EventStream<BHSPCEvent>>, std::shared_future<void>>
 SetUpProcessing(uint32_t width, uint32_t height, uint32_t maxFrames,
 	int32_t lineDelay, uint32_t lineTime, uint32_t lineMarkerBit,
 	OScDev_Acquisition* acquisition, std::function<void()> stopFunc,
-	std::shared_ptr<SPCFileWriter> spcFile)
+	std::shared_ptr<DeviceEventProcessor> additionalProcessor)
 {
 	int32_t inputBits = 12;
 	int32_t histoBits = 0; // Intensity image
@@ -64,29 +97,12 @@ SetUpProcessing(uint32_t width, uint32_t height, uint32_t maxFrames,
 
 	auto decoder = std::make_shared<BHSPCEventDecoder>(processor);
 
+	std::array<std::shared_ptr<DeviceEventProcessor>, 2> procs{ decoder,
+		additionalProcessor };
+
 	auto stream = std::make_shared<EventStream<BHSPCEvent>>();
-	auto done = std::async(std::launch::async, [stream, decoder, spcFile] {
-		for (;;) {
-			std::shared_ptr<EventBuffer<BHSPCEvent>> buffer;
-			try {
-				buffer = stream->ReceiveBlocking();
-			}
-			catch (std::exception const& e) {
-				decoder->HandleError(e.what());
-				spcFile->HandleError(e.what());
-				break;
-			}
-
-			if (!buffer) {
-				decoder->HandleFinish();
-				spcFile->HandleFinish();
-				break;
-			}
-
-			char const* data = reinterpret_cast<char const*>(buffer->GetData());
-			decoder->HandleDeviceEvents(data, buffer->GetSize());
-			spcFile->HandleDeviceEvents(data, buffer->GetSize());
-		}
+	auto done = std::async(std::launch::async, [stream, procs] {
+		PumpDeviceEvents(stream, procs);
 	});
 
 	return std::make_tuple(stream, done.share());
