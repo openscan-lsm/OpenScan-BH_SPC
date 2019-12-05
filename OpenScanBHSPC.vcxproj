@@ -171,6 +171,7 @@
     <ClInclude Include="BH_SPC150Private.h" />
     <ClInclude Include="DataStream.hpp" />
     <ClInclude Include="FIFOAcquisition.hpp" />
+    <ClInclude Include="SDTFile.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="AcquisitionControl.cpp" />
@@ -178,6 +179,7 @@
     <ClCompile Include="BH_SPC150.c" />
     <ClCompile Include="BH_SPC150Settings.c" />
     <ClCompile Include="DataStream.cpp" />
+    <ClCompile Include="SDTFile.c" />
     <ClCompile Include="SPCFileWriter.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

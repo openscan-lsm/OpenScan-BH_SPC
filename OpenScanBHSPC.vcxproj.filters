@@ -27,6 +27,9 @@
     <ClInclude Include="DataStream.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="SDTFile.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="BH_SPC150.c">
@@ -46,6 +49,9 @@
     </ClCompile>
     <ClCompile Include="SPCFileWriter.hpp">
       <Filter>Header Files</Filter>
+    </ClCompile>
+    <ClCompile Include="SDTFile.c">
+      <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>
