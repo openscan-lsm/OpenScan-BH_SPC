@@ -1,6 +1,7 @@
 #include "DataStream.hpp"
 
 #include <FLIMEvents/Histogram.hpp>
+#include <FLIMEvents/LineClockPixellator.hpp>
 
 #include <array>
 
