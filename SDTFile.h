@@ -21,13 +21,14 @@ struct SDTFileData {
 	double pixelRateHz;
 	unsigned macroTimeUnitsTenthNs;
 
-	bool usePixelMarker;
+	bool usePixelMarkers;
 	bool pixelMarkersRecorded;
 	bool lineMarkersRecorded;
 	bool frameMarkersRecorded;
 
-	// false = as acquired; true = made to be forward time in software
-	bool histogramTimeInverted;
+	// "reversed in software" - but BH sets this false in normal histogram
+	// files, in which time is in natural direction.
+	bool histogramTimeReversed;
 
 	short moduleNumber; // 0 to 3
 	char modelName[16]; // null-terminated
@@ -41,7 +42,8 @@ struct SDTFileData {
 	// All fields below contain data only available after the acquisition has
 	// completed.
 
-	// Elapsed time between SPC_start_measurement() and SPC_stop_measurement()
+	// Elapsed time between SPC_start_measurement() and SPC_stop_measurement()?
+	// Or compute from last observed macro-time in event stream?
 	float acquisitionDurationSeconds;
 
 	float timeOfFirstFrameMarkerSeconds;

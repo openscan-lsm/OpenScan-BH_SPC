@@ -79,7 +79,8 @@ static void PopulateDefaultParameters(struct BH_PrivateData *data)
 
 	data->pixelMappingMode = PixelMappingModeLineEndMarkers;
 	data->lineDelayPx = 0.0;
-	strcpy(data->spcFilename, "BH_photons.spc");
+	strcpy(data->spcFilename, "OpenScan-BHSPC.spc");
+	strcpy(data->sdtFilename, "OpenScan-BHSPC.sdt");
 }
 
 

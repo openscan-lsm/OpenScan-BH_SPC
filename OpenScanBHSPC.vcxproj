@@ -167,11 +167,13 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="AcquisitionCompletion.hpp" />
     <ClInclude Include="AcquisitionControl.h" />
     <ClInclude Include="BH_SPC150Private.h" />
     <ClInclude Include="DataStream.hpp" />
     <ClInclude Include="FIFOAcquisition.hpp" />
     <ClInclude Include="SDTFile.h" />
+    <ClInclude Include="SDTFileWriter.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="AcquisitionControl.cpp" />

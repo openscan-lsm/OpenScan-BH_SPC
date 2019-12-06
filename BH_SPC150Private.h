@@ -60,7 +60,8 @@ struct BH_PrivateData
 	enum PixelMappingMode pixelMappingMode;
 	double lineDelayPx; // Delay of photons relative to markers
 
-	char spcFilename[256];
+	char spcFilename[OScDev_MAX_STR_SIZE];
+	char sdtFilename[OScDev_MAX_STR_SIZE];
 
 	// C++ data for a single acquisition. Access to this pointer is not
 	// protected by a mutex (i.e. relies on synchronization by OpenScanLib and

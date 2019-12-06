@@ -165,18 +165,21 @@ bool IsSPC600FIFO48(short fifoType) {
 
 
 template <typename E>
-static void PushError(short code, EventStream<E>* stream)
+static void PushError(short code, EventStream<E>* stream,
+	std::shared_ptr<AcquisitionCompletion> completion)
 {
+	std::string message;
 	char buffer[512];
 	short err = SPC_get_error_string(code, buffer, sizeof(buffer) - 1);
 	if (err < 0) {
-		std::runtime_error e("Unknown SPC error: " + std::to_string(code));
-		stream->SendException(std::make_exception_ptr(e));
+		message = "Unknown SPC error: " + std::to_string(code);
 	}
 	else {
-		std::runtime_error e("SPC error: " + std::string(buffer));
-		stream->SendException(std::make_exception_ptr(e));
+		message = "SPC error: " + std::string(buffer);
 	}
+	std::runtime_error e(message);
+	stream->SendException(std::make_exception_ptr(e));
+	completion->HandleError("Acquisition stopped: " + message, "FIFOAcquisition");
 }
 
 
@@ -198,7 +201,9 @@ static short ReadFifo(short module, std::size_t* eventCount, T* buffer)
 // stopRequested: setting this future's shared state stops the acquisition
 template <typename E>
 static void RunAcquisition(short module, EventBufferPool<E>* pool,
-	EventStream<E>* stream, std::shared_future<void> stopRequested)
+	EventStream<E>* stream,
+	std::shared_future<void> stopRequested,
+	std::shared_ptr<AcquisitionCompletion> completion)
 {
 	short err;
 
@@ -207,7 +212,7 @@ static void RunAcquisition(short module, EventBufferPool<E>* pool,
 
 	err = SPC_start_measurement(module);
 	if (err < 0) {
-		PushError(err, stream);
+		PushError(err, stream, completion);
 		return;
 	}
 
@@ -237,14 +242,12 @@ static void RunAcquisition(short module, EventBufferPool<E>* pool,
 		// No events (unlikely due to macro-time overflow records); wait a
 		// little and try again.
 		if (eventsRead == 0) {
-			using namespace std::chrono_literals;
 			std::this_thread::sleep_for(20ms);
 			continue;
 		}
 
 		// If buffer is <50% utilized, wait a little and try to fill further
 		if (eventsRead * 2 < buffer->GetCapacity()) {
-			using namespace std::chrono_literals;
 			std::this_thread::sleep_for(20ms);
 
 			eventCount = buffer->GetCapacity() - eventsRead;
@@ -264,18 +267,21 @@ static void RunAcquisition(short module, EventBufferPool<E>* pool,
 	// using FIFO Imaging (FIFO_32M) mode.
 	err = SPC_stop_measurement(module);
 	if (err < 0) {
-		PushError(err, stream);
+		PushError(err, stream, completion);
 		return;
 	}
 
 	// Indicate end of stream
 	stream->Send({});
 
+	// TODO At this point we should collect post-acquisition data and send to SDTWriter.
+
+	completion->HandleFinish("FIFOAcquisition");
 	return;
 
 error:
 	SPC_stop_measurement(module);
-	PushError(err, stream);
+	PushError(err, stream, completion);
 }
 
 
@@ -283,10 +289,14 @@ template <typename E>
 static std::future<void> StartAcquisition(short module,
 	std::shared_ptr<EventBufferPool<E>> pool,
 	std::shared_ptr<EventStream<E>> stream,
-	std::shared_future<void> stopRequested)
+	std::shared_future<void> stopRequested,
+	std::shared_ptr<AcquisitionCompletion> completion)
 {
-	return std::async(std::launch::async, [module, pool, stream, stopRequested]() {
-		RunAcquisition<E>(module, pool.get(), stream.get(), stopRequested);
+	if (completion) {
+		completion->AddProcess("FIFOAcquisition");
+	}
+	return std::async(std::launch::async, [module, pool, stream, stopRequested, completion]() {
+		RunAcquisition<E>(module, pool.get(), stream.get(), stopRequested, completion);
 	});
 }
 
@@ -294,7 +304,8 @@ static std::future<void> StartAcquisition(short module,
 std::future<void> StartAcquisitionStandardFIFO(short module,
 	std::shared_ptr<EventBufferPool<BHSPCEvent>> pool,
 	std::shared_ptr<EventStream<BHSPCEvent>> stream,
-	std::shared_future<void> stopRequested)
+	std::shared_future<void> stopRequested,
+	std::shared_ptr<AcquisitionCompletion> completion)
 {
-	return StartAcquisition<BHSPCEvent>(module, pool, stream, stopRequested);
+	return StartAcquisition<BHSPCEvent>(module, pool, stream, stopRequested, completion);
 }

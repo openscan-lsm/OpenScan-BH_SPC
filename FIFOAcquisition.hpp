@@ -1,5 +1,7 @@
 #pragma once
 
+#include "AcquisitionCompletion.hpp"
+
 #include <FLIMEvents/BHDeviceEvent.hpp>
 #include <FLIMEvents/StreamBuffer.hpp>
 
@@ -18,4 +20,5 @@ bool IsSPC600FIFO48(short fifoType);
 std::future<void> StartAcquisitionStandardFIFO(short module,
 	std::shared_ptr<EventBufferPool<BHSPCEvent>> pool,
 	std::shared_ptr<EventStream<BHSPCEvent>> stream,
-	std::shared_future<void> stopRequested);
+	std::shared_future<void> stopRequested,
+	std::shared_ptr<AcquisitionCompletion> completion);

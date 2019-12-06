@@ -1,5 +1,6 @@
 #include "BH_SPC150Private.h"
 
+#include "AcquisitionCompletion.hpp"
 #include "DataStream.hpp"
 #include "FIFOAcquisition.hpp"
 #include "SPCFileWriter.hpp"
@@ -9,6 +10,8 @@
 #include <chrono>
 #include <fstream>
 #include <future>
+#include <string>
+#include <vector>
 
 
 // C++ state that we store in our device private data. Members are kept
@@ -17,8 +20,8 @@
 struct AcqState {
 	// Indicates finish of all activities related to an acquisition; once this
 	// future completes, this struct may be deallocated at any time (but only
-	// within an externally synchronized context).
-	std::shared_future<void> finish;
+	// within an externally synchronized context). Value = any error messages.
+	std::shared_future<std::vector<std::string>> finish;
 
 	// Setting a value on this promise stopps the acquisition. Because there
 	// are two separate places where this may be set (user stop request and
@@ -26,6 +29,11 @@ struct AcqState {
 	// for the possible future_exception with a code of
 	// promise_already_satisfied.
 	std::promise<void> requestStop;
+
+	// Futures from std::async that we need to hold.
+	std::future<void> eventPumpingFinish;
+	std::future<void> acquisitionFinish;
+	std::future<void> logStopFinish;
 };
 
 
@@ -139,10 +147,14 @@ static int CheckMarkers(OScDev_Device* device)
 extern "C"
 int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 {
+	OScDev_Log_Info(device, "Starting acquisition setup");
+
 	int err = ResetAcquisitionState(device);
 	if (err != 0)
 		return err;
 	auto acqState = GetData(device)->acqState;
+	std::shared_future<void> stopRequested =
+		acqState->requestStop.get_future().share();
 
 	err = ConfigureMarkers(device);
 	if (err != 0)
@@ -171,6 +183,7 @@ int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 	}
 	double lineDelayPixels = GetData(device)->lineDelayPx;
 	std::string spcFilename(GetData(device)->spcFilename);
+	std::string sdtFilename(GetData(device)->sdtFilename);
 
 	char fileHeader[4];
 	short fifoType;
@@ -189,32 +202,73 @@ int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 		lineDelay -= lineTime;
 	}
 
-	auto spcFile = std::make_shared<SPCFileWriter>(spcFilename, fileHeader);
-	if (!spcFile->IsValid()) {
-		return 1; // Cannot open spc file
-	}
-
-	// TODO Handle bad_alloc if we cannot allocate histogram memory
-	auto stream_finish = SetUpProcessing(width, height, nFrames,
-		lineDelay, lineTime, lineMarkerBit, acq,
+	auto completion = std::make_shared<AcquisitionCompletion>(
 		[acqState]() mutable { RequestAcquisitionStop(acqState); },
-		std::static_pointer_cast<DeviceEventProcessor>(spcFile));
-	auto& stream = std::get<0>(stream_finish);
-	auto dataFinished = std::get<1>(stream_finish);
+		[device](std::string const& m) { OScDev_Log_Debug(device, m.c_str()); });
+	acqState->finish = completion->GetCompletion();
+
+	// Treat the following setup as a separate process, preventing the
+	// completion from firing during setup.
+	completion->AddProcess("Setup");
+
+	auto spcWriter = std::make_shared<SPCFileWriter>(spcFilename, fileHeader, completion);
+
+	auto sdtWriter = std::make_shared<SDTWriter>(sdtFilename, 1, completion);
+	sdtWriter->SetPreacquisitionData(GetData(device)->moduleNr,
+		8, width, height, pixelRateHz, false,
+		GetData(device)->pixelMarkerBit < NUM_MARKER_BITS,
+		GetData(device)->lineMarkerBit < NUM_MARKER_BITS,
+		GetData(device)->frameMarkerBit < NUM_MARKER_BITS);
+
+	std::shared_ptr<EventStream<BHSPCEvent>> stream;
+	try {
+		completion->AddProcess("ProcessingSetup");
+		auto stream_and_done = SetUpProcessing(width, height, nFrames,
+			lineDelay, lineTime, lineMarkerBit, acq,
+			spcWriter, sdtWriter, completion);
+		stream = std::get<0>(stream_and_done);
+		acqState->eventPumpingFinish = std::move(std::get<1>(stream_and_done));
+		completion->HandleFinish("ProcessingSetup");
+	}
+	catch (std::bad_alloc const&) { // Likely could not allocate histogram memory
+		completion->HandleError("Cannot allocate memory for histogram(s)", "ProcessingSetup");
+	}
 
 	// 48k events = ~5 ms at 10M events/s
 	auto pool = std::make_shared<EventBufferPool<BHSPCEvent>>(48 * 1024);
 
-	std::shared_future<void> stopRequested =
-		acqState->requestStop.get_future().share();
+	completion->HandleFinish("Setup");
+	using namespace std::chrono_literals;
+	if (acqState->finish.wait_for(0s) == std::future_status::ready) {
+		OScDev_Log_Error(device, "Failed during acquisition setup:");
+		auto messages = acqState->finish.get();
+		for (auto const& m : messages) {
+			OScDev_Log_Error(device, m.c_str());
+		}
+		return 1;
+	}
+	else {
+		acqState->logStopFinish = std::async(std::launch::async, [device, acqState] {
+			auto messages = acqState->finish.get();
+			if (messages.empty()) {
+				OScDev_Log_Info(device, "All acquisition processes finished.");
+			}
+			else {
+				OScDev_Log_Error(device, "Acquisition failed with error(s):");
+				for (auto const& m : messages) {
+					OScDev_Log_Error(device, m.c_str());
+				}
+			}
+		});
+	}
 
-	auto acqFinished = StartAcquisitionStandardFIFO(GetData(device)->moduleNr,
-		pool, stream, stopRequested).share();
+	OScDev_Log_Info(device, "Starting acquisition");
 
-	acqState->finish = std::async(std::launch::async, [dataFinished, acqFinished]() {
-		dataFinished.get();
-		acqFinished.get();
-	}).share();
+	acqState->acquisitionFinish = StartAcquisitionStandardFIFO(
+		GetData(device)->moduleNr, pool, stream, stopRequested, completion);
+
+	// TODO: Arrange to actually set post-acquisition data to SDTWriter
+	sdtWriter->FinishPostAcquisitionData();
 
 	return 0;
 }

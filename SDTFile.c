@@ -52,7 +52,7 @@ static int WriteSDTIdentification(FILE* fp, const struct SDTFileData *data)
 		// consider removing.
 		snprintf(buf, bufSize,
 			"*IDENTIFICAION" NEWLINE
-			"  ID        : \x04%s\x04" NEWLINE
+			"  ID        : %s" NEWLINE
 			"  Title     : OpenScan FLIM Image" NEWLINE
 			"  Version   : 3  980 M" NEWLINE
 			"  Revision  : %u bits ADC" NEWLINE
@@ -192,7 +192,7 @@ static int WriteSDTMeasurementDescBlock(FILE* fp,
 	b.bord_l = 0;
 
 	b.pix_time = (float)(1.0 / data->pixelRateHz);
-	b.pix_clk = data->usePixelMarker ? 1 : 0;
+	b.pix_clk = data->usePixelMarkers ? 1 : 0;
 
 	b.trigger = p->trigger;
 
@@ -275,7 +275,7 @@ static int WriteSDTMeasurementDescBlock(FILE* fp,
 	b.xy_gain;
 
 	b.dig_flags = (p->master_clock ? 1 : 0) |
-		((data->histogramTimeInverted ? 1 : 0) << 2);
+		((data->histogramTimeReversed ? 1 : 0) << 2);
 
 	// Not applicable; SPC-930 only
 	b.adc_de;
@@ -352,9 +352,9 @@ static int WriteSDTHistogramDataBlock(FILE* fp,
 	header.block_type = FIFO_DATA | IMG_BLOCK | DATA_USHORT;
 	// TODO |= DATA_ZIPPED if we use PKZIP format
 	header.meas_desc_block_no = channelData->channel;
-	header.lblock_no = (data->moduleNumber << 24) |
-		((header.block_type >> 4) & 0xf << 20) | // IMG_BLOCK
-		channelData->channel;
+	header.lblock_no = (data->moduleNumber << 24) | // bits 24-25 = module no
+		((header.block_type >> 4) & 0xf << 20) | // bits 20-23 = block type
+		(channelData->channel + 1); // bits 0-7 = block no (1-based)
 	header.block_length = (unsigned long)(numSamples * sizeof(uint16_t));
 
 	size_t written = fwrite(&header, sizeof(header), 1, fp);

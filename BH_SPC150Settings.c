@@ -328,6 +328,25 @@ static OScDev_SettingImpl SettingImpl_SPCFilename = {
 };
 
 
+static OScDev_Error GetSDTFilename(OScDev_Setting *setting, char *value)
+{
+	strcpy(value, GetSettingDeviceData(setting)->sdtFilename);
+	return OScDev_OK;
+}
+
+
+static OScDev_Error SetSDTFilename(OScDev_Setting *setting, const char *value)
+{
+	strcpy(GetSettingDeviceData(setting)->sdtFilename, value);
+	return OScDev_OK;
+}
+
+static OScDev_SettingImpl SettingImpl_SDTFilename = {
+	.GetString = GetSDTFilename,
+	.SetString = SetSDTFilename,
+};
+
+
 static OScDev_Error GetSyncValue(OScDev_Setting *setting, double *value)
 {
 	EnterCriticalSection(&GetSettingDeviceData(setting)->rateCountersMutex);
@@ -436,6 +455,12 @@ OScDev_Error BH_MakeSettings(OScDev_Device *device, OScDev_PtrArray **settings)
 		&SettingImpl_SPCFilename, device)))
 		goto error;
 	OScDev_PtrArray_Append(*settings, spcFilename);
+
+	OScDev_Setting *sdtFilename;
+	if (OScDev_CHECK(err, OScDev_Setting_Create(&sdtFilename, "SDTFilename", OScDev_ValueType_String,
+		&SettingImpl_SDTFilename, device)))
+		goto error;
+	OScDev_PtrArray_Append(*settings, sdtFilename);
 
 	OScDev_Setting *sync_value;
 	if (OScDev_CHECK(err, OScDev_Setting_Create(&sync_value, "BH_SyncRate", OScDev_ValueType_Float64,

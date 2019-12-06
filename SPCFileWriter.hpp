@@ -1,25 +1,41 @@
 #pragma once
 
+#include "AcquisitionCompletion.hpp"
+
 #include <FLIMEvents/DeviceEvent.hpp>
 
 #include <fstream>
+#include <memory>
 
 
 // Write .spc file with standard 4-byte format
 class SPCFileWriter final : public DeviceEventProcessor {
 	std::fstream file;
+	std::shared_ptr<AcquisitionCompletion> downstream;
 
 public:
-	SPCFileWriter(std::string const& filename, char fileHeader[4]) :
-		file(filename, std::fstream::binary | std::fstream::out)
+	SPCFileWriter(std::string const& filename, char fileHeader[4],
+		std::shared_ptr<AcquisitionCompletion> downstream) :
+		file(filename, std::fstream::binary | std::fstream::out),
+		downstream(downstream)
 	{
-		if (file.is_open() && file.good()) {
-			file.write(fileHeader, 4);
+		if (downstream) {
+			downstream->AddProcess("SPCFileWriter");
 		}
-	}
 
-	bool IsValid() const noexcept {
-		return file.is_open() && file.good();
+		if (!file.is_open()) {
+			if (downstream) {
+				downstream->HandleError("Cannot open SPC file", "SPCFileWriter");
+				downstream.reset();
+			}
+			return;
+		}
+
+		file.write(fileHeader, 4);
+		if (!file.good() && downstream) {
+			downstream->HandleError("Write error in SPC file", "SPCFileWriter");
+			downstream.reset();
+		}
 	}
 
 	std::size_t GetEventSize() const noexcept override {
@@ -32,18 +48,27 @@ public:
 
 	void HandleError(std::string const& message) override {
 		file.close();
+		if (downstream) {
+			downstream->HandleError("Closed SPC file due to error: " + message, "SPCFileWriter");
+			downstream.reset();
+		}
 	}
 
 	void HandleFinish() override {
 		file.close();
+		if (downstream) {
+			downstream->HandleFinish("SPCFileWriter");
+			downstream.reset();
+		}
 	}
 
 	void HandleDeviceEvents(char const* events, std::size_t count) override {
-		if (!file.is_open() || !file.good()) {
-			return;
-		}
-
-		// TODO Report write errors
 		file.write(events, GetEventSize() * count);
+		if (!file.good()) {
+			if (downstream) {
+				downstream->HandleError("Write error in SPC file", "SPCFileWriter");
+				downstream.reset();
+			}
+		}
 	}
 };
