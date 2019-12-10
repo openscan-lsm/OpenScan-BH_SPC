@@ -166,7 +166,7 @@ bool IsSPC600FIFO48(short fifoType) {
 
 template <typename E>
 static void PushError(short code, EventStream<E>* stream,
-	std::shared_ptr<AcquisitionCompletion> completion)
+	AcquisitionCompletion* completion)
 {
 	std::string message;
 	char buffer[512];
@@ -203,18 +203,12 @@ template <typename E>
 static void RunAcquisition(short module, EventBufferPool<E>* pool,
 	EventStream<E>* stream,
 	std::shared_future<void> stopRequested,
-	std::shared_ptr<AcquisitionCompletion> completion)
+	AcquisitionCompletion* completion)
 {
 	short err;
 
 	// Note that, in all code paths, we ensure that measurement is stopped
 	// _before_ the stream is finished (successfully or with error).
-
-	err = SPC_start_measurement(module);
-	if (err < 0) {
-		PushError(err, stream, completion);
-		return;
-	}
 
 	// Since we are not using stop_on_time, measurement continues until we
 	// decide to stop from software. That decision is made by downstream data
@@ -286,7 +280,7 @@ error:
 
 
 template <typename E>
-static std::future<void> StartAcquisition(short module,
+static std::tuple<int, std::future<void>> StartAcquisition(short module,
 	std::shared_ptr<EventBufferPool<E>> pool,
 	std::shared_ptr<EventStream<E>> stream,
 	std::shared_future<void> stopRequested,
@@ -295,13 +289,26 @@ static std::future<void> StartAcquisition(short module,
 	if (completion) {
 		completion->AddProcess("FIFOAcquisition");
 	}
-	return std::async(std::launch::async, [module, pool, stream, stopRequested, completion]() {
-		RunAcquisition<E>(module, pool.get(), stream.get(), stopRequested, completion);
+
+	// Start of measurement must be synchronous (on current thread) so that
+	// the device is actually armed before we return.
+	short err = SPC_start_measurement(module);
+	if (err < 0) {
+		PushError(err, stream.get(), completion.get());
+
+		std::promise<void> done;
+		done.set_value();
+		return std::make_tuple(static_cast<int>(err), done.get_future());
+	}
+
+	auto finish = std::async(std::launch::async, [module, pool, stream, stopRequested, completion]() {
+		RunAcquisition<E>(module, pool.get(), stream.get(), stopRequested, completion.get());
 	});
+	return std::make_tuple(0, std::move(finish));
 }
 
 
-std::future<void> StartAcquisitionStandardFIFO(short module,
+std::tuple<int, std::future<void>> StartAcquisitionStandardFIFO(short module,
 	std::shared_ptr<EventBufferPool<BHSPCEvent>> pool,
 	std::shared_ptr<EventStream<BHSPCEvent>> stream,
 	std::shared_future<void> stopRequested,

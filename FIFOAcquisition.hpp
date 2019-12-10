@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <future>
 #include <memory>
+#include <tuple>
 
 
 int ConfigureDeviceForFIFOAcquisition(short module);
@@ -17,7 +18,7 @@ bool IsStandardFIFO(short fifoType);
 bool IsSPC600FIFO32(short fifoType);
 bool IsSPC600FIFO48(short fifoType);
 
-std::future<void> StartAcquisitionStandardFIFO(short module,
+std::tuple<int, std::future<void>> StartAcquisitionStandardFIFO(short module,
 	std::shared_ptr<EventBufferPool<BHSPCEvent>> pool,
 	std::shared_ptr<EventStream<BHSPCEvent>> stream,
 	std::shared_future<void> stopRequested,

@@ -144,6 +144,21 @@ static int CheckMarkers(OScDev_Device* device)
 }
 
 
+static void WaitForCompletionAndLog(OScDev_Device* device, AcqState* acqState, std::string const& proc)
+{
+	auto messages = acqState->finish.get();
+	if (messages.empty()) {
+		OScDev_Log_Info(device, (proc + " finished successfully").c_str());
+	}
+	else {
+		OScDev_Log_Error(device, (proc + " failed with error(s):").c_str());
+		for (auto const& m : messages) {
+			OScDev_Log_Error(device, m.c_str());
+		}
+	}
+}
+
+
 extern "C"
 int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 {
@@ -234,41 +249,40 @@ int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 		completion->HandleError("Cannot allocate memory for histogram(s)", "ProcessingSetup");
 	}
 
+	completion->HandleFinish("Setup");
+	using namespace std::chrono_literals;
+	if (stopRequested.wait_for(0s) == std::future_status::ready) {
+		// A synchronous error occurred during setup
+		stream->Send({});
+		OScDev_Log_Error(device, "Failed during acquisition setup; waiting for cleanup");
+		WaitForCompletionAndLog(device, acqState, "Acquisition setup");
+		return 1;
+	}
+
 	// 48k events = ~5 ms at 10M events/s
 	auto pool = std::make_shared<EventBufferPool<BHSPCEvent>>(48 * 1024);
 
-	completion->HandleFinish("Setup");
-	using namespace std::chrono_literals;
-	if (acqState->finish.wait_for(0s) == std::future_status::ready) {
-		OScDev_Log_Error(device, "Failed during acquisition setup:");
-		auto messages = acqState->finish.get();
-		for (auto const& m : messages) {
-			OScDev_Log_Error(device, m.c_str());
-		}
-		return 1;
-	}
-	else {
-		acqState->logStopFinish = std::async(std::launch::async, [device, acqState] {
-			auto messages = acqState->finish.get();
-			if (messages.empty()) {
-				OScDev_Log_Info(device, "All acquisition processes finished.");
-			}
-			else {
-				OScDev_Log_Error(device, "Acquisition failed with error(s):");
-				for (auto const& m : messages) {
-					OScDev_Log_Error(device, m.c_str());
-				}
-			}
-		});
-	}
-
-	OScDev_Log_Info(device, "Starting acquisition");
-
-	acqState->acquisitionFinish = StartAcquisitionStandardFIFO(
+	auto err_and_finish = StartAcquisitionStandardFIFO(
 		GetData(device)->moduleNr, pool, stream, stopRequested, completion);
+	err = std::get<0>(err_and_finish);
+	acqState->acquisitionFinish = std::move(std::get<1>(err_and_finish));
+	if (err != 0) {
+		// A synchronous error occurred while starting acquisition
+		OScDev_Log_Error(device, "Failed to start acquisition; waiting for cleanup");
+		WaitForCompletionAndLog(device, acqState, "Starting acquisition");
+		return err;
+	}
+
+	OScDev_Log_Info(device, "Started acquisition");
 
 	// TODO: Arrange to actually set post-acquisition data to SDTWriter
 	sdtWriter->FinishPostAcquisitionData();
+
+	// Arrange to log the end of acquisition.
+	acqState->logStopFinish = std::async(std::launch::async, [device, acqState] {
+		OScDev_Log_Info(device, "Waiting for acquisition to finish");
+		WaitForCompletionAndLog(device, acqState, "Acquisition");
+	});
 
 	return 0;
 }
