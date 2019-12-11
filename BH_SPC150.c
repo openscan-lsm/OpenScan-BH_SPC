@@ -81,6 +81,7 @@ static void PopulateDefaultParameters(struct BH_PrivateData *data)
 	data->lineDelayPx = 0.0;
 	strcpy(data->spcFilename, "OpenScan-BHSPC.spc");
 	strcpy(data->sdtFilename, "OpenScan-BHSPC.sdt");
+	data->checkSyncBeforeAcq = true;
 }
 
 

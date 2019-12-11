@@ -13,7 +13,8 @@
 
 int ConfigureDeviceForFIFOAcquisition(short module);
 int SetMarkerPolarities(short module, uint16_t enabledBits, uint16_t polarityBits);
-int SetUpAcquisition(short module, char fileHeader[4], short* fifoType, int* macroTimeClockTenthNs);
+int SetUpAcquisition(short module, bool checkSync,
+	char fileHeader[4], short* fifoType, int* macroTimeClockTenthNs);
 bool IsStandardFIFO(short fifoType);
 bool IsSPC600FIFO32(short fifoType);
 bool IsSPC600FIFO48(short fifoType);

@@ -308,6 +308,26 @@ static OScDev_SettingImpl SettingImpl_LineDelayPx = {
 };
 
 
+static OScDev_Error GetCheckSync(OScDev_Setting *setting, bool *value)
+{
+	*value = GetSettingDeviceData(setting)->checkSyncBeforeAcq;
+	return OScDev_OK;
+}
+
+
+static OScDev_Error SetCheckSync(OScDev_Setting *setting, bool value)
+{
+	GetSettingDeviceData(setting)->checkSyncBeforeAcq = value;
+	return OScDev_OK;
+}
+
+
+static OScDev_SettingImpl SettingImpl_CheckSync = {
+	.GetBool = GetCheckSync,
+	.SetBool = SetCheckSync,
+};
+
+
 static OScDev_Error GetSPCFilename(OScDev_Setting *setting, char *value)
 {
 	strcpy(value, GetSettingDeviceData(setting)->spcFilename);
@@ -449,6 +469,12 @@ OScDev_Error BH_MakeSettings(OScDev_Device *device, OScDev_PtrArray **settings)
 		&SettingImpl_LineDelayPx, device)))
 		goto error;
 	OScDev_PtrArray_Append(*settings, lineDelayPx);
+
+	OScDev_Setting *checkSync;
+	if (OScDev_CHECK(err, OScDev_Setting_Create(&checkSync, "CheckSyncBeforeAcquisition", OScDev_ValueType_Bool,
+		&SettingImpl_CheckSync, device)))
+		goto error;
+	OScDev_PtrArray_Append(*settings, checkSync);
 
 	OScDev_Setting *spcFilename;
 	if (OScDev_CHECK(err, OScDev_Setting_Create(&spcFilename, "SPCFilename", OScDev_ValueType_String,

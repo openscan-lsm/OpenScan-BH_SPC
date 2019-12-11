@@ -205,12 +205,13 @@ int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 	double lineDelayPixels = GetData(device)->lineDelayPx;
 	std::string spcFilename(GetData(device)->spcFilename);
 	std::string sdtFilename(GetData(device)->sdtFilename);
+	bool checkSync = GetData(device)->checkSyncBeforeAcq;
 
 	char fileHeader[4];
 	short fifoType;
 	int macroTimeUnitsTenthNs;
-	err = SetUpAcquisition(GetData(device)->moduleNr, fileHeader,
-		&fifoType, &macroTimeUnitsTenthNs);
+	err = SetUpAcquisition(GetData(device)->moduleNr, checkSync,
+		fileHeader, &fifoType, &macroTimeUnitsTenthNs);
 	if (err != 0)
 		return err;
 	if (!IsStandardFIFO(fifoType)) {
@@ -232,14 +233,20 @@ int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 	// completion from firing during setup.
 	completion->AddProcess("Setup");
 
-	auto spcWriter = std::make_shared<SPCFileWriter>(spcFilename, fileHeader, completion);
+	std::shared_ptr<SPCFileWriter> spcWriter;
+	if (!spcFilename.empty()) {
+		spcWriter = std::make_shared<SPCFileWriter>(spcFilename, fileHeader, completion);
+	}
 
-	auto sdtWriter = std::make_shared<SDTWriter>(sdtFilename, 1, completion);
-	sdtWriter->SetPreacquisitionData(GetData(device)->moduleNr,
-		8, width, height, pixelRateHz, false,
-		GetData(device)->pixelMarkerBit < NUM_MARKER_BITS,
-		GetData(device)->lineMarkerBit < NUM_MARKER_BITS,
-		GetData(device)->frameMarkerBit < NUM_MARKER_BITS);
+	std::shared_ptr<SDTWriter> sdtWriter;
+	if (!sdtFilename.empty()) {
+		sdtWriter = std::make_shared<SDTWriter>(sdtFilename, 1, completion);
+		sdtWriter->SetPreacquisitionData(GetData(device)->moduleNr,
+			8, width, height, pixelRateHz, false,
+			GetData(device)->pixelMarkerBit < NUM_MARKER_BITS,
+			GetData(device)->lineMarkerBit < NUM_MARKER_BITS,
+			GetData(device)->frameMarkerBit < NUM_MARKER_BITS);
+	}
 
 	std::shared_ptr<EventStream<BHSPCEvent>> stream;
 	try {
@@ -283,7 +290,9 @@ int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 	OScDev_Log_Info(device, "Started acquisition");
 
 	// TODO: Arrange to actually set post-acquisition data to SDTWriter
-	sdtWriter->FinishPostAcquisitionData();
+	if (sdtWriter) {
+		sdtWriter->FinishPostAcquisitionData();
+	}
 
 	// Arrange to log the end of acquisition.
 	acqState->logStopFinish = std::async(std::launch::async, [device, acqState] {

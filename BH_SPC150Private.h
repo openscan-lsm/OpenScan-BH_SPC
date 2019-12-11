@@ -63,6 +63,8 @@ struct BH_PrivateData
 	char spcFilename[OScDev_MAX_STR_SIZE];
 	char sdtFilename[OScDev_MAX_STR_SIZE];
 
+	bool checkSyncBeforeAcq;
+
 	// C++ data for a single acquisition. Access to this pointer is not
 	// protected by a mutex (i.e. relies on synchronization by OpenScanLib and
 	// application). Thus, although we create a new AcqState for each

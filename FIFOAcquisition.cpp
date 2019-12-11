@@ -109,7 +109,8 @@ int SetMarkerPolarities(short module, uint16_t enabledBits, uint16_t polarityBit
 // Prepare for acquisition and determine necessary parameters for data handling
 // fileHeader: set to first 4 bytes of the (4- or 6-byte) .spc file header
 // fifoType: set to FIFO_48, FIFO_32, FIFO_130, etc.
-int SetUpAcquisition(short module, char fileHeader[4], short* fifoType, int* macroTimeClockTenthNs)
+int SetUpAcquisition(short module, bool checkSync,
+	char fileHeader[4], short* fifoType, int* macroTimeClockTenthNs)
 {
 	short err;
 
@@ -119,13 +120,15 @@ int SetUpAcquisition(short module, char fileHeader[4], short* fifoType, int* mac
 
 	// Check that Sync is good. This check is not atomic (obviously), but it is
 	// good to fail early.
-	short syncState;
-	err = SPC_get_sync_state(module, &syncState);
-	if (err < 0) {
-		return err;
-	}
-	if (syncState != 1) {
-		return 1; // TODO Error: No sync (or overload)
+	if (checkSync) {
+		short syncState;
+		err = SPC_get_sync_state(module, &syncState);
+		if (err < 0) {
+			return err;
+		}
+		if (syncState != 1) {
+			return 1; // TODO Error: No sync (or overload)
+		}
 	}
 
 	// Get the event data format and .spc file header

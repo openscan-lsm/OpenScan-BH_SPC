@@ -5,7 +5,6 @@
 #include <FLIMEvents/LineClockPixellator.hpp>
 #include <FLIMEvents/StreamBuffer.hpp>
 
-#include <array>
 #include <memory>
 
 
@@ -87,9 +86,9 @@ namespace {
 }
 
 
-template <typename E, unsigned N>
+template <typename E>
 static void PumpDeviceEvents(std::shared_ptr<EventStream<E>> stream,
-	std::array<std::shared_ptr<DeviceEventProcessor>, N> processors)
+	std::vector<std::shared_ptr<DeviceEventProcessor>> processors)
 {
 	for (;;) {
 		std::shared_ptr<EventBuffer<E>> buffer;
@@ -151,17 +150,21 @@ SetUpProcessing(uint32_t width, uint32_t height, uint32_t maxFrames,
 
 	auto intensitySink = std::make_shared<IntensityImageSink>(
 		acquisition, stopFunc, completion);
-
-	auto histoSink = std::make_shared<HistogramSink>(0, histogramWriter);
-
 	auto intensityProc = MakeCumulativeHistogrammer<SampleType>(
 		intensityBits, inputBits, width, height, intensitySink);
 
-	auto histoProc = MakeCumulativeHistogrammer<SampleType>(
-		histoBits, inputBits, width, height, histoSink);
+	std::shared_ptr<PixelPhotonProcessor> histogrammers;
+	if (histogramWriter) {
+		auto histoSink = std::make_shared<HistogramSink>(0, histogramWriter);
+		auto histoProc = MakeCumulativeHistogrammer<SampleType>(
+			histoBits, inputBits, width, height, histoSink);
 
-	auto histogrammers = std::make_shared<BroadcastPixelPhotonProcessor<2>>(
-		intensityProc, histoProc);
+		histogrammers = std::make_shared<BroadcastPixelPhotonProcessor<2>>(
+			intensityProc, histoProc);
+	}
+	else {
+		histogrammers = intensityProc;
+	}
 
 	auto pixellator = std::make_shared<LineClockPixellator>(
 		width, height, maxFrames, lineDelay, lineTime, lineMarkerBit,
@@ -169,12 +172,15 @@ SetUpProcessing(uint32_t width, uint32_t height, uint32_t maxFrames,
 
 	auto decoder = std::make_shared<BHSPCEventDecoder>(pixellator);
 
-	std::array<std::shared_ptr<DeviceEventProcessor>, 2> procs{
-		decoder, additionalProcessor };
+	std::vector<std::shared_ptr<DeviceEventProcessor>> procs;
+	procs.emplace_back(decoder);
+	if (additionalProcessor) {
+		procs.emplace_back(additionalProcessor);
+	}
 
 	auto stream = std::make_shared<EventStream<BHSPCEvent>>();
 
-	auto done = std::async(std::launch::async, [stream, procs] {
+	auto done = std::async(std::launch::async, [stream, procs = std::move(procs)] {
 		PumpDeviceEvents(stream, procs);
 	});
 
