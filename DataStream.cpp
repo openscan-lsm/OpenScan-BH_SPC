@@ -6,7 +6,6 @@
 #include <FLIMEvents/StreamBuffer.hpp>
 
 #include <array>
-#include <functional>
 #include <memory>
 
 
@@ -16,12 +15,15 @@ using SampleType = uint16_t;
 namespace {
 	class IntensityImageSink : public HistogramProcessor<SampleType> {
 		OScDev_Acquisition* acquisition;
+		std::function<void(void)> stopFunc;
 		std::shared_ptr<AcquisitionCompletion> downstream;
 
 	public:
-		explicit IntensityImageSink(OScDev_Acquisition* acquisition,
+		IntensityImageSink(OScDev_Acquisition* acquisition,
+			std::function<void(void)> stopFunction,
 			std::shared_ptr<AcquisitionCompletion> downstream) :
 			acquisition(acquisition),
+			stopFunc(stopFunction),
 			downstream(downstream)
 		{
 			if (downstream) {
@@ -43,6 +45,9 @@ namespace {
 		}
 
 		void HandleFinish(Histogram<SampleType>&&, bool) override {
+			if (stopFunc) {
+				stopFunc();
+			}
 			if (downstream) {
 				downstream->HandleFinish("IntensityImage");
 				downstream.reset();
@@ -133,7 +138,7 @@ static std::shared_ptr<PixelPhotonProcessor> MakeCumulativeHistogrammer(
 std::tuple<std::shared_ptr<EventStream<BHSPCEvent>>, std::future<void>>
 SetUpProcessing(uint32_t width, uint32_t height, uint32_t maxFrames,
 	int32_t lineDelay, uint32_t lineTime, uint32_t lineMarkerBit,
-	OScDev_Acquisition* acquisition,
+	OScDev_Acquisition* acquisition, std::function<void(void)> stopFunc,
 	std::shared_ptr<DeviceEventProcessor> additionalProcessor,
 	std::shared_ptr<SDTWriter> histogramWriter,
 	std::shared_ptr<AcquisitionCompletion> completion)
@@ -144,7 +149,8 @@ SetUpProcessing(uint32_t width, uint32_t height, uint32_t maxFrames,
 
 	// Construct our processing graph starting at downstream.
 
-	auto intensitySink = std::make_shared<IntensityImageSink>(acquisition, completion);
+	auto intensitySink = std::make_shared<IntensityImageSink>(
+		acquisition, stopFunc, completion);
 
 	auto histoSink = std::make_shared<HistogramSink>(0, histogramWriter);
 

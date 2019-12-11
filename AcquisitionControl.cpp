@@ -246,6 +246,7 @@ int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 		completion->AddProcess("ProcessingSetup");
 		auto stream_and_done = SetUpProcessing(width, height, nFrames,
 			lineDelay, lineTime, lineMarkerBit, acq,
+			[acqState]() mutable { RequestAcquisitionStop(acqState); },
 			spcWriter, sdtWriter, completion);
 		stream = std::get<0>(stream_and_done);
 		acqState->eventPumpingFinish = std::move(std::get<1>(stream_and_done));
