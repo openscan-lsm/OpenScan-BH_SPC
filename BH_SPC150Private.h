@@ -8,9 +8,12 @@
 struct AcqState; // Defined in C++
 
 
-// As far as I can tell this is uniform across all BH SPC models supporting
-// FIFO mode and external markers.
+// This is uniform across all BH SPC models supporting FIFO mode and external
+// markers.
 #define NUM_MARKER_BITS 4
+
+// All BH SPC models supporting FIFO mode have 4 routing bits in FIFO mode.
+#define MAX_NUM_CHANNELS 16
 
 
 enum MarkerPolarity {
@@ -49,6 +52,8 @@ struct BH_PrivateData
 	double cfdRate;
 	double tacRate;
 	double adcRate;
+
+	uint16_t channelMask;
 
 	// External marker configuration
 	enum MarkerPolarity  markerActiveEdges[NUM_MARKER_BITS];

@@ -67,7 +67,11 @@ public:
 		data.numChannels = nChannels;
 
 		channelData.resize(nChannels);
-		memset(channelData.data(), 0, nChannels * sizeof(SDTFileChannelData));
+		for (unsigned i = 0; i < nChannels; ++i) {
+			auto& chData = channelData[i];
+			memset(&chData, 0, sizeof(SDTFileChannelData));
+			chData.channel = i;
+		}
 
 		memset(&params, 0, sizeof(params));
 

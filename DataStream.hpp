@@ -9,6 +9,7 @@
 
 #include <OpenScanDeviceLib.h>
 
+#include <bitset>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -17,6 +18,7 @@
 
 std::tuple<std::shared_ptr<EventStream<BHSPCEvent>>, std::future<void>>
 SetUpProcessing(uint32_t width, uint32_t height, uint32_t maxFrames,
+	std::bitset<16> channelMask,
 	int32_t lineDelay, uint32_t lineTime, uint32_t lineMarkerBit,
 	OScDev_Acquisition* acquisition, std::function<void(void)> stopFunc,
 	std::shared_ptr<DeviceEventProcessor> additionalProcessor,
