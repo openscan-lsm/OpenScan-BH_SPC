@@ -171,6 +171,12 @@ int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 	std::shared_future<void> stopRequested =
 		acqState->requestStop.get_future().share();
 
+	// Temporarily set 'finish' to a completed future in case we fail during
+	// setup.
+	std::promise<std::vector<std::string>> unstarted;
+	acqState->finish = unstarted.get_future().share();
+	unstarted.set_value({});
+
 	err = ConfigureMarkers(device);
 	if (err != 0)
 		return err;
