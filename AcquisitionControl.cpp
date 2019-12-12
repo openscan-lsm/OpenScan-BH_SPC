@@ -191,6 +191,11 @@ int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 	uint32_t xOffset, yOffset, width, height;
 	OScDev_Acquisition_GetROI(acq, &xOffset, &yOffset, &width, &height);
 
+	std::bitset<MAX_NUM_CHANNELS> channelMask = GetData(device)->channelMask;
+	if (channelMask.count() < 1) {
+		return 1; // No channel enabled
+	}
+
 	bool lineMarkersAtLineEnds;
 	switch (GetData(device)->pixelMappingMode) {
 	case PixelMappingModeLineStartMarkers:
@@ -240,7 +245,8 @@ int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 
 	std::shared_ptr<SDTWriter> sdtWriter;
 	if (!sdtFilename.empty()) {
-		sdtWriter = std::make_shared<SDTWriter>(sdtFilename, 1, completion);
+		sdtWriter = std::make_shared<SDTWriter>(sdtFilename,
+			static_cast<unsigned>(channelMask.count()), completion);
 		sdtWriter->SetPreacquisitionData(GetData(device)->moduleNr,
 			8, width, height, pixelRateHz, false,
 			GetData(device)->pixelMarkerBit < NUM_MARKER_BITS,
@@ -252,7 +258,7 @@ int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 	try {
 		completion->AddProcess("ProcessingSetup");
 		auto stream_and_done = SetUpProcessing(width, height, nFrames,
-			lineDelay, lineTime, lineMarkerBit, acq,
+			channelMask, lineDelay, lineTime, lineMarkerBit, acq,
 			[acqState]() mutable { RequestAcquisitionStop(acqState); },
 			spcWriter, sdtWriter, completion);
 		stream = std::get<0>(stream_and_done);

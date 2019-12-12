@@ -3,6 +3,7 @@
 #include <FLIMEvents/BHDeviceEvent.hpp>
 #include <FLIMEvents/Histogram.hpp>
 #include <FLIMEvents/LineClockPixellator.hpp>
+#include <FLIMEvents/PixelPhotonRouter.hpp>
 #include <FLIMEvents/StreamBuffer.hpp>
 
 #include <memory>
@@ -136,6 +137,7 @@ static std::shared_ptr<PixelPhotonProcessor> MakeCumulativeHistogrammer(
 // until processing finishes (or else destructor will block).
 std::tuple<std::shared_ptr<EventStream<BHSPCEvent>>, std::future<void>>
 SetUpProcessing(uint32_t width, uint32_t height, uint32_t maxFrames,
+	std::bitset<16> channelMask,
 	int32_t lineDelay, uint32_t lineTime, uint32_t lineMarkerBit,
 	OScDev_Acquisition* acquisition, std::function<void(void)> stopFunc,
 	std::shared_ptr<DeviceEventProcessor> additionalProcessor,
@@ -150,25 +152,45 @@ SetUpProcessing(uint32_t width, uint32_t height, uint32_t maxFrames,
 
 	auto intensitySink = std::make_shared<IntensityImageSink>(
 		acquisition, stopFunc, completion);
-	auto intensityProc = MakeCumulativeHistogrammer<SampleType>(
+	auto intensityAccumulator = MakeCumulativeHistogrammer<SampleType>(
 		intensityBits, inputBits, width, height, intensitySink);
 
-	std::shared_ptr<PixelPhotonProcessor> histogrammers;
-	if (histogramWriter) {
-		auto histoSink = std::make_shared<HistogramSink>(0, histogramWriter);
-		auto histoProc = MakeCumulativeHistogrammer<SampleType>(
-			histoBits, inputBits, width, height, histoSink);
-
-		histogrammers = std::make_shared<BroadcastPixelPhotonProcessor<2>>(
-			intensityProc, histoProc);
+	// We construct a single-channel intensity image as the sum of all enabled
+	// channels (for now, at least).
+	std::vector<std::shared_ptr<PixelPhotonProcessor>> channelAccumulators;
+	channelAccumulators.resize(channelMask.size());
+	for (unsigned i = 0; i < channelMask.size(); ++i) {
+		if (!channelMask[i])
+			continue;
+		channelAccumulators[i] = intensityAccumulator;
 	}
-	else {
-		histogrammers = intensityProc;
+	auto intensityProc = std::make_shared<PixelPhotonRouter>(channelAccumulators);
+
+	std::shared_ptr<PixelPhotonProcessor> pixelPhotonProcs = intensityProc;
+
+	// If saving histograms, create histogrammers for each enabled channel.
+	if (histogramWriter) {
+		std::vector<std::shared_ptr<PixelPhotonProcessor>> histogrammers;
+		histogrammers.resize(channelMask.size());
+		int n = 0;
+		for (unsigned i = 0; i < channelMask.size(); ++i) {
+			if (!channelMask[i])
+				continue;
+			auto histoSink = std::make_shared<HistogramSink>(n, histogramWriter);
+			auto histoProc = MakeCumulativeHistogrammer<SampleType>(
+				histoBits, inputBits, width, height, histoSink);
+			histogrammers[i] = histoProc;
+			++n;
+		}
+		auto histoProc = std::make_shared<PixelPhotonRouter>(histogrammers);
+
+		pixelPhotonProcs = std::make_shared<BroadcastPixelPhotonProcessor<2>>(
+			intensityProc, histoProc);
 	}
 
 	auto pixellator = std::make_shared<LineClockPixellator>(
 		width, height, maxFrames, lineDelay, lineTime, lineMarkerBit,
-		histogrammers);
+		pixelPhotonProcs);
 
 	auto decoder = std::make_shared<BHSPCEventDecoder>(pixellator);
 

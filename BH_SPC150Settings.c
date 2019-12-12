@@ -32,6 +32,48 @@ static OScDev_Error IsWritableImpl_ReadOnly(OScDev_Setting *setting, bool *writa
 }
 
 
+struct EnableChannelData {
+	OScDev_Device *device;
+	int hwChannel;
+};
+
+
+static void ReleaseEnableChannel(OScDev_Setting *setting)
+{
+	free(OScDev_Setting_GetImplData(setting));
+}
+
+
+static OScDev_Error GetEnableChannel(OScDev_Setting *setting, bool *value)
+{
+	struct EnableChannelData *data = OScDev_Setting_GetImplData(setting);
+	struct BH_PrivateData *deviceData = OScDev_Device_GetImplData(data->device);
+	*value = deviceData->channelMask & (1 << data->hwChannel);
+	return OScDev_OK;
+}
+
+
+static OScDev_Error SetEnableChannel(OScDev_Setting *setting, bool value)
+{
+	struct EnableChannelData *data = OScDev_Setting_GetImplData(setting);
+	struct BH_PrivateData *deviceData = OScDev_Device_GetImplData(data->device);
+	if (value) {
+		deviceData->channelMask |= 1 << data->hwChannel;
+	}
+	else {
+		deviceData->channelMask &= ~(uint16_t)(1 << data->hwChannel);
+	}
+	return OScDev_OK;
+}
+
+
+static OScDev_SettingImpl SettingImpl_EnableChannel = {
+	.Release = ReleaseEnableChannel,
+	.GetBool = GetEnableChannel,
+	.SetBool = SetEnableChannel,
+};
+
+
 struct MarkerActiveEdgeSettingData {
 	OScDev_Device *device;
 	uint32_t markerBit;
@@ -431,6 +473,19 @@ OScDev_Error BH_MakeSettings(OScDev_Device *device, OScDev_PtrArray **settings)
 {
 	OScDev_Error err = OScDev_OK;
 	*settings = OScDev_PtrArray_Create();
+
+	for (int i = 0; i < MAX_NUM_CHANNELS; ++i) {
+		struct EnableChannelData *data = calloc(1, sizeof(struct EnableChannelData));
+		data->device = device;
+		data->hwChannel = i;
+		char name[64];
+		snprintf(name, sizeof(name), "EnableChannel%d", i);
+		OScDev_Setting *enableChannel;
+		if (OScDev_CHECK(err, OScDev_Setting_Create(&enableChannel, name, OScDev_ValueType_Bool,
+			&SettingImpl_EnableChannel, data)))
+			goto error;
+		OScDev_PtrArray_Append(*settings, enableChannel);
+	}
 
 	for (int i = 0; i < NUM_MARKER_BITS; ++i) {
 		struct MarkerActiveEdgeSettingData *data = calloc(1, sizeof(struct MarkerActiveEdgeSettingData));

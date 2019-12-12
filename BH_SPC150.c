@@ -70,6 +70,8 @@ static void PopulateDefaultParameters(struct BH_PrivateData *data)
 	data->tacRate = 0.0;
 	data->adcRate = 0.0;
 
+	data->channelMask = 1; // Enable channel 0 only by default
+
 	for (int i = 0; i < NUM_MARKER_BITS; ++i) {
 		data->markerActiveEdges[i] = MarkerPolarityRisingEdge;
 	}
