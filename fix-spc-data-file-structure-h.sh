@@ -3,6 +3,9 @@
 # Run this script in Git Bash to generate a compilable version of
 # SPC_data_file_structure.h.
 
+# The tested version of SPC_data_file_structure.h had the following MD5 sum:
+# 175c3ebb156565446a492e6823f21b2d
+
 mkdir -p generated_include
 
 # Remove typedef struct ... XYZ blocks for the following types:

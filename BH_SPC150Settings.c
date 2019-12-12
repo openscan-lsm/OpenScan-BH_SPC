@@ -403,9 +403,30 @@ static OScDev_Error SetSDTFilename(OScDev_Setting *setting, const char *value)
 	return OScDev_OK;
 }
 
+
 static OScDev_SettingImpl SettingImpl_SDTFilename = {
 	.GetString = GetSDTFilename,
 	.SetString = SetSDTFilename,
+};
+
+
+static OScDev_Error GetSDTCompression(OScDev_Setting *setting, bool *value)
+{
+	*value = GetSettingDeviceData(setting)->compressHistograms;
+	return OScDev_OK;
+}
+
+
+static OScDev_Error SetSDTCompression(OScDev_Setting *setting, bool value)
+{
+	GetSettingDeviceData(setting)->compressHistograms = value;
+	return OScDev_OK;
+}
+
+
+static OScDev_SettingImpl SettingImpl_SDTCompression = {
+	.GetBool = GetSDTCompression,
+	.SetBool = SetSDTCompression,
 };
 
 
@@ -542,6 +563,12 @@ OScDev_Error BH_MakeSettings(OScDev_Device *device, OScDev_PtrArray **settings)
 		&SettingImpl_SDTFilename, device)))
 		goto error;
 	OScDev_PtrArray_Append(*settings, sdtFilename);
+
+	OScDev_Setting *sdtCompression;
+	if (OScDev_CHECK(err, OScDev_Setting_Create(&sdtCompression, "SDTCompression", OScDev_ValueType_Bool,
+		&SettingImpl_SDTCompression, device)))
+		goto error;
+	OScDev_PtrArray_Append(*settings, sdtCompression);
 
 	OScDev_Setting *sync_value;
 	if (OScDev_CHECK(err, OScDev_Setting_Create(&sync_value, "BH_SyncRate", OScDev_ValueType_Float64,

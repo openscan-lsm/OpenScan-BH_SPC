@@ -85,11 +85,13 @@ public:
 	// Should be called after setting all SPC parameters but before starting
 	// measurement.
 	void SetPreacquisitionData(short module, uint32_t histogramBits,
-		uint32_t width, uint32_t height, double pixelRateHz, bool usePixelMarkers,
-		bool recordPixelMarkers, bool recordLineMarkers, bool recordFrameMarkers) {
+		uint32_t width, uint32_t height, bool useCompression,
+		double pixelRateHz, bool usePixelMarkers, bool recordPixelMarkers,
+		bool recordLineMarkers, bool recordFrameMarkers) {
 		data.histogramBits = histogramBits;
 		data.width = width;
 		data.height = height;
+		data.useCompression = useCompression;
 		data.pixelRateHz = pixelRateHz;
 		data.usePixelMarkers = usePixelMarkers;
 		data.pixelMarkersRecorded = recordPixelMarkers;

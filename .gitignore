@@ -53,3 +53,7 @@ Release/
 
 # Generated file
 generated_include/
+
+# Dependencies
+libzip/
+zlib/

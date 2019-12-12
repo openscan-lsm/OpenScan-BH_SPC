@@ -93,14 +93,14 @@
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32;_DEBUG;_WINDOWS;_USRDLL;OPENSCANBHSPC_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>..\OpenScanLib\OpenScanDeviceLib\include;.\generated_include;C:\Program Files (x86)\BH\SPCM\DLL;.\FLIMEvents\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\OpenScanLib\OpenScanDeviceLib\include;.\generated_include;C:\Program Files (x86)\BH\SPCM\DLL;.\FLIMEvents\include;.\libzip\$(Platform)\$(Configuration)\include;.\zlib\$(Platform)\$(Configuration)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DisableSpecificWarnings>4800;%(DisableSpecificWarnings)</DisableSpecificWarnings>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>..\OpenScanLib\$(Platform)\$(Configuration);c:\Program Files (x86)\BH\SPCM\DLL\LIB\MSVC;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>OpenScanDeviceLib.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>..\OpenScanLib\$(Platform)\$(Configuration);.\libzip\$(Platform)\$(Configuration)\lib;.\zlib\$(Platform)\$(Configuration)\lib;c:\Program Files (x86)\BH\SPCM\DLL\LIB\MSVC;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>OpenScanDeviceLib.lib;zip.lib;zlibstaticd.lib;spcm.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -111,15 +111,15 @@
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_DEBUG;_WINDOWS;_USRDLL;OPENSCANBHSPC_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>..\OpenScanLib\OpenScanDeviceLib\include;.\generated_include;C:\Program Files (x86)\BH\SPCM\DLL;.\FLIMEvents\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\OpenScanLib\OpenScanDeviceLib\include;.\generated_include;C:\Program Files (x86)\BH\SPCM\DLL;.\FLIMEvents\include;.\libzip\$(Platform)\$(Configuration)\include;.\zlib\$(Platform)\$(Configuration)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
       <DisableSpecificWarnings>4800;%(DisableSpecificWarnings)</DisableSpecificWarnings>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>..\OpenScanLib\$(Platform)\$(Configuration);c:\Program Files (x86)\BH\SPCM\DLL\LIB\MSVC64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>OpenScanDeviceLib.lib;spcm64.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>..\OpenScanLib\$(Platform)\$(Configuration);.\libzip\$(Platform)\$(Configuration)\lib;.\zlib\$(Platform)\$(Configuration)\lib;c:\Program Files (x86)\BH\SPCM\DLL\LIB\MSVC64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>OpenScanDeviceLib.lib;zip.lib;zlibstaticd.lib;spcm64.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -132,7 +132,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32;NDEBUG;_WINDOWS;_USRDLL;OPENSCANBHSPC_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>..\OpenScanLib\OpenScanDeviceLib\include;.\generated_include;C:\Program Files (x86)\BH\SPCM\DLL;.\FLIMEvents\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\OpenScanLib\OpenScanDeviceLib\include;.\generated_include;C:\Program Files (x86)\BH\SPCM\DLL;.\FLIMEvents\include;.\libzip\$(Platform)\$(Configuration)\include;.\zlib\$(Platform)\$(Configuration)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DisableSpecificWarnings>4800;%(DisableSpecificWarnings)</DisableSpecificWarnings>
     </ClCompile>
     <Link>
@@ -140,8 +140,8 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalLibraryDirectories>..\OpenScanLib\$(Platform)\$(Configuration);c:\Program Files (x86)\BH\SPCM\DLL\LIB\MSVC;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>OpenScanDeviceLib.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>..\OpenScanLib\$(Platform)\$(Configuration);.\libzip\$(Platform)\$(Configuration)\lib;.\zlib\$(Platform)\$(Configuration)\lib;c:\Program Files (x86)\BH\SPCM\DLL\LIB\MSVC;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>OpenScanDeviceLib.lib;zip.lib;zlibstatic.lib;spcm.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -154,7 +154,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;NDEBUG;_WINDOWS;_USRDLL;OPENSCANBHSPC_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>..\OpenScanLib\OpenScanDeviceLib\include;.\generated_include;C:\Program Files (x86)\BH\SPCM\DLL;.\FLIMEvents\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\OpenScanLib\OpenScanDeviceLib\include;.\generated_include;C:\Program Files (x86)\BH\SPCM\DLL;.\FLIMEvents\include;.\libzip\$(Platform)\$(Configuration)\include;.\zlib\$(Platform)\$(Configuration)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DisableSpecificWarnings>4800;%(DisableSpecificWarnings)</DisableSpecificWarnings>
     </ClCompile>
     <Link>
@@ -162,8 +162,8 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalLibraryDirectories>..\OpenScanLib\$(Platform)\$(Configuration);c:\Program Files (x86)\BH\SPCM\DLL\LIB\MSVC64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>OpenScanDeviceLib.lib;spcm64.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>..\OpenScanLib\$(Platform)\$(Configuration);.\libzip\$(Platform)\$(Configuration)\lib;.\zlib\$(Platform)\$(Configuration)\lib;c:\Program Files (x86)\BH\SPCM\DLL\LIB\MSVC64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>OpenScanDeviceLib.lib;zip.lib;zlibstatic.lib;spcm64.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -174,6 +174,7 @@
     <ClInclude Include="FIFOAcquisition.hpp" />
     <ClInclude Include="SDTFile.h" />
     <ClInclude Include="SDTFileWriter.hpp" />
+    <ClInclude Include="ZipCompress.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="AcquisitionControl.cpp" />
@@ -183,6 +184,7 @@
     <ClCompile Include="DataStream.cpp" />
     <ClCompile Include="SDTFile.c" />
     <ClCompile Include="SPCFileWriter.hpp" />
+    <ClCompile Include="ZipCompress.c" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
