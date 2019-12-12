@@ -6,6 +6,7 @@
 
 
 struct AcqState; // Defined in C++
+struct RateCounts; // Defined in C++
 
 
 // This is uniform across all BH SPC models supporting FIFO mode and external
@@ -44,15 +45,6 @@ struct BH_PrivateData
 {
 	short moduleNr;
 
-	CRITICAL_SECTION rateCountersMutex;
-	CONDITION_VARIABLE rateCountersStopCondition;
-	bool rateCountersStopRequested;
-	bool rateCountersRunning;
-	double syncRate;
-	double cfdRate;
-	double tacRate;
-	double adcRate;
-
 	uint16_t channelMask;
 
 	// External marker configuration
@@ -70,6 +62,10 @@ struct BH_PrivateData
 	bool compressHistograms;
 
 	bool checkSyncBeforeAcq;
+
+	// C++ data for rate counter monitoring. Manually initialized on device
+	// open; deleted on device close.
+	struct RateCounts *rates;
 
 	// C++ data for a single acquisition. Access to this pointer is not
 	// protected by a mutex (i.e. relies on synchronization by OpenScanLib and
