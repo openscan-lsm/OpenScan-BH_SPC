@@ -1,5 +1,7 @@
 #include "BH_SPC150Private.h"
 
+#include "RateCounters.h"
+
 #include <stdio.h>
 
 
@@ -430,63 +432,32 @@ static OScDev_SettingImpl SettingImpl_SDTCompression = {
 };
 
 
-static OScDev_Error GetSyncValue(OScDev_Setting *setting, double *value)
-{
-	EnterCriticalSection(&GetSettingDeviceData(setting)->rateCountersMutex);
-	*value = GetSettingDeviceData(setting)->syncRate;
-	LeaveCriticalSection(&GetSettingDeviceData(setting)->rateCountersMutex);
-	return OScDev_OK;
-}
-
-
-static OScDev_SettingImpl SettingImpl_Sync = {
-	.GetFloat64 = GetSyncValue,
-	.IsWritable = IsWritableImpl_ReadOnly,
+struct RateCounterData {
+	OScDev_Device *device;
+	int index;
 };
 
 
-static OScDev_Error GetCFD(OScDev_Setting *setting, double *value)
+static void ReleaseRateCounter(OScDev_Setting *setting)
 {
-	EnterCriticalSection(&GetSettingDeviceData(setting)->rateCountersMutex);
-	*value = GetSettingDeviceData(setting)->cfdRate;
-	LeaveCriticalSection(&GetSettingDeviceData(setting)->rateCountersMutex);
+	free(OScDev_Setting_GetImplData(setting));
+}
+
+
+static OScDev_Error GetRateCounter(OScDev_Setting *setting, double *value)
+{
+	struct RateCounterData *data = OScDev_Setting_GetImplData(setting);
+	float values[4];
+	GetRates(GetData(data->device)->rates, values);
+	*value = values[data->index];
 	return OScDev_OK;
 }
 
 
-static OScDev_SettingImpl SettingImpl_CFD = {
-	.GetFloat64 = GetCFD,
+static OScDev_SettingImpl SettingImpl_RateCounter = {
+	.Release = ReleaseRateCounter,
 	.IsWritable = IsWritableImpl_ReadOnly,
-};
-
-
-static OScDev_Error GetTAC(OScDev_Setting *setting, double *value)
-{
-	EnterCriticalSection(&GetSettingDeviceData(setting)->rateCountersMutex);
-	*value = GetSettingDeviceData(setting)->tacRate;
-	LeaveCriticalSection(&GetSettingDeviceData(setting)->rateCountersMutex);
-	return OScDev_OK;
-}
-
-
-static OScDev_SettingImpl SettingImpl_TAC = {
-	.GetFloat64 = GetTAC,
-	.IsWritable = IsWritableImpl_ReadOnly,
-};
-
-
-static OScDev_Error GetADC(OScDev_Setting *setting, double *value)
-{
-	EnterCriticalSection(&GetSettingDeviceData(setting)->rateCountersMutex);
-	*value = GetSettingDeviceData(setting)->adcRate;
-	LeaveCriticalSection(&GetSettingDeviceData(setting)->rateCountersMutex);
-	return OScDev_OK;
-}
-
-
-static OScDev_SettingImpl SettingImpl_ADC = {
-	.GetFloat64 = GetADC,
-	.IsWritable = IsWritableImpl_ReadOnly,
+	.GetFloat64 = GetRateCounter,
 };
 
 
@@ -516,21 +487,25 @@ OScDev_Error BH_MakeSettings(OScDev_Device *device, OScDev_PtrArray **settings)
 		snprintf(name, sizeof(name), "Marker%dActiveEdge", i);
 		OScDev_Setting *markerActiveEdge;
 		if (OScDev_CHECK(err, OScDev_Setting_Create(&markerActiveEdge, name, OScDev_ValueType_Enum,
-			&SettingImpl_MarkerActiveEdge, data)))
+			&SettingImpl_MarkerActiveEdge, data))) {
+			free(data);
 			goto error;
+		}
 		OScDev_PtrArray_Append(*settings, markerActiveEdge);
 	}
 
 	const char *scanMarkers[] = { "PixelMarker", "LineMarker", "FrameMarker" };
 	int scanMarkerTypes[] = { ScanMarkerTypePixelMarker, ScanMarkerTypeLineMarker, ScanMarkerTypeFrameMarker };
 	for (int i = 0; i < 3; ++i) {
-		OScDev_Setting *markerAssignment;
 		struct ScanMarkerAssignmentData *data = calloc(1, sizeof(struct ScanMarkerAssignmentData));
 		data->device = device;
 		data->markerType = scanMarkerTypes[i];
+		OScDev_Setting *markerAssignment;
 		if (OScDev_CHECK(err, OScDev_Setting_Create(&markerAssignment, scanMarkers[i], OScDev_ValueType_Enum,
-			&SettingImpl_ScanMarkerAssignment, data)))
+			&SettingImpl_ScanMarkerAssignment, data))) {
+			free(data);
 			goto error;
+		}
 		OScDev_PtrArray_Append(*settings, markerAssignment);
 	}
 
@@ -570,29 +545,21 @@ OScDev_Error BH_MakeSettings(OScDev_Device *device, OScDev_PtrArray **settings)
 		goto error;
 	OScDev_PtrArray_Append(*settings, sdtCompression);
 
-	OScDev_Setting *sync_value;
-	if (OScDev_CHECK(err, OScDev_Setting_Create(&sync_value, "BH_SyncRate", OScDev_ValueType_Float64,
-		&SettingImpl_Sync, device)))
-		goto error;
-	OScDev_PtrArray_Append(*settings, sync_value);
-
-	OScDev_Setting *cfd_value;
-	if (OScDev_CHECK(err, OScDev_Setting_Create(&cfd_value, "BH_CFDRate", OScDev_ValueType_Float64,
-		&SettingImpl_CFD, device)))
-		goto error;
-	OScDev_PtrArray_Append(*settings, cfd_value);
-
-	OScDev_Setting *tac_value;
-	if (OScDev_CHECK(err, OScDev_Setting_Create(&tac_value, "BH_TACRate", OScDev_ValueType_Float64,
-		&SettingImpl_TAC, device)))
-		goto error;
-	OScDev_PtrArray_Append(*settings, tac_value);
-
-	OScDev_Setting *adc_value;
-	if (OScDev_CHECK(err, OScDev_Setting_Create(&adc_value, "BH_ADCRate", OScDev_ValueType_Float64,
-		&SettingImpl_ADC, device)))
-		goto error;
-	OScDev_PtrArray_Append(*settings, adc_value);
+	const char *rateCounters[] = { "Sync", "CFD", "TAC", "ADC" };
+	for (int i = 0; i < 4; ++i) {
+		struct RateCounterData *data = calloc(1, sizeof(struct RateCounterData));
+		data->device = device;
+		data->index = i;
+		char name[64];
+		snprintf(name, sizeof(name), "RateCounter-%s", rateCounters[i]);
+		OScDev_Setting *rateCounter;
+		if (OScDev_CHECK(err, OScDev_Setting_Create(&rateCounter, name, OScDev_ValueType_Float64,
+			&SettingImpl_RateCounter, data))) {
+			free(data);
+			goto error;
+		}
+		OScDev_PtrArray_Append(*settings, rateCounter);
+	}
 
 	return OScDev_OK;
 

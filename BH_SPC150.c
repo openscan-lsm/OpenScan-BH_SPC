@@ -1,6 +1,7 @@
 #include "BH_SPC150Private.h"
 
 #include "AcquisitionControl.h"
+#include "RateCounters.h"
 
 #include <Spcm_def.h>
 
@@ -16,59 +17,9 @@ static size_t g_openDeviceCount = 0;
 static OScDev_DeviceImpl BH_TCSPC_Device_Impl;
 
 
-static DWORD WINAPI RateCounterMonitoringLoop(void *param)
-{
-	OScDev_Device *device = (OScDev_Device *)param;
-	struct BH_PrivateData *privData = GetData(device);
-
-	short moduleNr = 0; // TODO Avoid hard-coded module no
-
-	EnterCriticalSection(&privData->rateCountersMutex);
-	privData->rateCountersRunning = true;
-	LeaveCriticalSection(&privData->rateCountersMutex);
-
-	OScDev_Log_Debug(device, "Rate counter monitoring thread started");
-	while (true)
-	{
-		Sleep(100);
-
-		rate_values rates;
-		short err = SPC_read_rates(moduleNr, &rates);
-		if (err != 0) {
-			continue;
-		}
-
-		EnterCriticalSection(&privData->rateCountersMutex);
-		privData->syncRate = rates.sync_rate;
-		privData->cfdRate = rates.cfd_rate;
-		privData->tacRate = rates.tac_rate;
-		privData->adcRate = rates.adc_rate;
-		if (privData->rateCountersStopRequested) {
-			privData->rateCountersRunning = false;
-			LeaveCriticalSection(&privData->rateCountersMutex);
-			break;
-		}
-		LeaveCriticalSection(&privData->rateCountersMutex);
-	}
-
-	OScDev_Log_Debug(device, "Exiting rate counter monitoring thread");
-
-	WakeAllConditionVariable(&privData->rateCountersStopCondition);
-
-	return 0;
-}
-
-
 static void PopulateDefaultParameters(struct BH_PrivateData *data)
 {
-	InitializeCriticalSection(&data->rateCountersMutex);
-	InitializeConditionVariable(&data->rateCountersStopCondition);
-	data->rateCountersStopRequested = false;
-	data->rateCountersRunning = false;
-	data->syncRate = 0.0;
-	data->cfdRate = 0.0;
-	data->tacRate = 0.0;
-	data->adcRate = 0.0;
+	memset(data, 0, sizeof(struct BH_PrivateData));
 
 	data->channelMask = 1; // Enable channel 0 only by default
 
@@ -199,8 +150,7 @@ static OScDev_Error BH_Open(OScDev_Device *device)
 	if (OScDev_CHECK(err, InitializeDeviceForAcquisition(device)))
 		return err;
 
-	DWORD threadId;
-	CreateThread(NULL, 0, RateCounterMonitoringLoop, device, 0, &threadId);
+	GetData(device)->rates = StartRateCounterMonitor(GetData(device)->moduleNr, 0.25);
 
 	++g_openDeviceCount;
 
@@ -213,12 +163,8 @@ static OScDev_Error BH_Close(OScDev_Device *device)
 {
 	ShutdownAcquisitionState(device);
 
-	struct BH_PrivateData *privData = GetData(device);
-	EnterCriticalSection(&privData->rateCountersMutex);
-	privData->rateCountersStopRequested = true;
-	while (privData->rateCountersRunning)
-		SleepConditionVariableCS(&privData->rateCountersStopCondition, &privData->rateCountersMutex, INFINITE);
-	LeaveCriticalSection(&privData->rateCountersMutex);
+	StopRateCounterMonitor(GetData(device)->rates);
+	GetData(device)->rates = NULL;
 
 	--g_openDeviceCount;
 
