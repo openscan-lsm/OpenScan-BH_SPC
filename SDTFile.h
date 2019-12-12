@@ -18,6 +18,8 @@ struct SDTFileData {
 	unsigned height;
 	unsigned numChannels;
 
+	bool useCompression;
+
 	double pixelRateHz;
 	unsigned macroTimeUnitsTenthNs;
 

@@ -67,6 +67,7 @@ struct BH_PrivateData
 
 	char spcFilename[OScDev_MAX_STR_SIZE];
 	char sdtFilename[OScDev_MAX_STR_SIZE];
+	bool compressHistograms;
 
 	bool checkSyncBeforeAcq;
 
