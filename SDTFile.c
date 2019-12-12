@@ -485,30 +485,30 @@ static int WriteSDTFileP(FILE *fp,
 	header.no_of_data_blocks = data->numChannels;
 	header.data_block_length = data->width * data->height * (1 << data->histogramBits) * sizeof(uint16_t);
 	header.reserved1 = data->numChannels;
-	unsigned long nextOffsetPosInPrevBlock = -1;
-	for (unsigned i = 0; i < data->numChannels; ++i) {
-		long pos = ftell(fp);
-		if (i == 0) {
-			header.data_block_offs = pos;
-		}
-		else {
-			if (fseek(fp, nextOffsetPosInPrevBlock, SEEK_SET) != 0) {
-				return 1; // I/O error
-			}
-			written = fwrite(&pos, sizeof(unsigned long), 1, fp);
-			if (written < 1) {
-				return 1; // Write error
-			}
-			if (fseek(fp, pos, SEEK_SET) != 0) {
-				return 1; // I/O error
-			}
-		}
 
+	header.data_block_offs = ftell(fp);
+	for (unsigned i = 0; i < data->numChannels; ++i) {
+		unsigned long nextOffsetPos = -1;
 		err = WriteSDTHistogramDataBlock(fp, data->useCompression,
 			data, channelDataArray[i], channelHistograms[i],
-			&nextOffsetPosInPrevBlock);
+			&nextOffsetPos);
 		if (err)
 			return err;
+
+		// Update the next-block-offset field. This sets the next-block-offset
+		// of the last data block to the end-of-file offset, which is what was
+		// observed in files written by BH.
+		long pos = ftell(fp);
+		if (fseek(fp, nextOffsetPos, SEEK_SET) != 0) {
+			return 1; // I/O error
+		}
+		written = fwrite(&pos, sizeof(unsigned long), 1, fp);
+		if (written < 1) {
+			return 1; // Write error
+		}
+		if (fseek(fp, pos, SEEK_SET) != 0) {
+			return 1; // I/O error
+		}
 	}
 
 	// Rewrite the now-valid header
