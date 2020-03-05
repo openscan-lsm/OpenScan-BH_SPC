@@ -352,8 +352,10 @@ static int WriteSDTHistogramDataBlock(FILE* fp,
 	if (useCompression) {
 		compressedHisto = CreateInMemoryZip();
 		if (compressedHisto) {
+			// The default compression level (6) is too slow. Compression
+			// level 1 gives good enough compression and is fast.
 			int err = CompressToInMemoryZip(histogram, uncompressedSize,
-				compressedHisto, "data_block");
+				compressedHisto, "data_block", 1);
 			if (err) {
 				FreeInMemoryZip(compressedHisto);
 				compressedHisto = NULL;

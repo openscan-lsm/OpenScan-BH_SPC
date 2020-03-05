@@ -27,7 +27,7 @@ void FreeInMemoryZip(struct InMemoryZip *imz)
 
 
 int CompressToInMemoryZip(const void *input, size_t inSize,
-	struct InMemoryZip *imz, const char *filename)
+	struct InMemoryZip *imz, const char *filename, int level)
 {
 	zip_error_t error;
 	zip_error_init(&error);
@@ -61,6 +61,13 @@ int CompressToInMemoryZip(const void *input, size_t inSize,
 
 	zip_int64_t index = zip_file_add(archive, filename, inputSrc, 0);
 	if (index < 0) {
+		int err = zip_get_error(archive)->zip_err;
+		zip_source_free(inputSrc);
+		zip_close(archive);
+		return err;
+	}
+
+	if (zip_set_file_compression(archive, index, ZIP_CM_DEFLATE, level)) {
 		int err = zip_get_error(archive)->zip_err;
 		zip_source_free(inputSrc);
 		zip_close(archive);
