@@ -4,8 +4,8 @@ OpenScan device module for Becker & Hickl Single Photon Counters
 How to build
 ------------
 
-Currently this module is built with Visual Sutdio (2015; should also build with
-VS2019). The following dependencies must be supplied:
+Currently this module is built with Visual Sutdio 2019. The following
+dependencies must be supplied:
 
 - The **BH SPCM DLL**. This should be installed together with the SPCM software
   in `C:\Program Files (x86)\BH\SPCM\DLL`.
@@ -34,7 +34,7 @@ VS2019). The following dependencies must be supplied:
 - The instructions below use **[Ninja](https://ninja-build.org/)** to build
   zlib and libzip (although the Visual Studio IDE can also be used). Install
   the Windows binary from https://github.com/ninja-build/ninja/releases, or
-  install from the Visual Studio 2019 installer (not bundled with VS2015).
+  install from the Visual Studio 2019 installer.
 
 - Make sure CMake and Ninja are in `PATH`. (Nothing needs to be done if they
   were installed with Visual Studio.)
@@ -58,19 +58,20 @@ Building zlib
 
 These instructions are for building a 64-bit version on 64-bit Windows.
 
-From the Start Menu, open **VS2015 x64 Native Tools Command Prompt**. Run the
-following commands.
+From the Start Menu, open **x64 Native Tools Command Prompt for VS 2019**. Run
+the following commands.
 
 Make sure to use forward slashes in paths.
 
 ```
+set OSBH=C:/path/to/OpenScan-BH_SPC
+cd /d %OSBH%
+
 git clone https://github.com/madler/zlib.git
 cd zlib
 git checkout v1.2.9
 mkdir build
 cd build
-
-set OSBH=C:/path/to/OpenScan-BH_SPC
 
 cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release ^
   -DCMAKE_INSTALL_PREFIX=%OSBH%/zlib/x64/Release
@@ -102,19 +103,20 @@ These instructions are for building a 64-bit version on 64-bit Windows. We
 build a version that only supports deflate (zlib) compression, since that is
 all we need.
 
-From the Start Menu, open **VS2015 x64 Native Tools Command Prompt**. Run the
-following commands.
+From the Start Menu, open **x64 Native Tools Command Prompt for VS 2019**. Run
+the following commands.
 
 Make sure to use forward slashes in paths.
 
 ```
+set OSBH=C:/path/to/OpenScan-BH_SPC
+cd /d %OSBH%
+
 git clone https://github.com/nih-at/libzip.git
 cd libzip
 git checkout rel-1-5-2
 mkdir build
 cd build
-
-set OSBH=C:/path/to/OpenScan-BH_SPC
 
 cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release ^
   -DCMAKE_INSTALL_PREFIX=%OSBH%/libzip/x64/Release ^
