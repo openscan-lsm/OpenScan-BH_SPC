@@ -76,6 +76,26 @@ static OScDev_SettingImpl SettingImpl_EnableChannel = {
 };
 
 
+static OScDev_Error GetIntensityImagesCumulative(OScDev_Setting *setting, bool *value)
+{
+	*value = GetSettingDeviceData(setting)->accumulateIntensity;
+	return OScDev_OK;
+}
+
+
+static OScDev_Error SetIntensityImagesCumulative(OScDev_Setting *setting, bool value)
+{
+	GetSettingDeviceData(setting)->accumulateIntensity = value;
+	return OScDev_OK;
+}
+
+
+static OScDev_SettingImpl SettingImpl_IntensityImagesCumulative = {
+	.GetBool = GetIntensityImagesCumulative,
+	.SetBool = SetIntensityImagesCumulative,
+};
+
+
 struct MarkerActiveEdgeSettingData {
 	OScDev_Device *device;
 	uint32_t markerBit;
@@ -478,6 +498,12 @@ OScDev_Error BH_MakeSettings(OScDev_Device *device, OScDev_PtrArray **settings)
 			goto error;
 		OScDev_PtrArray_Append(*settings, enableChannel);
 	}
+
+	OScDev_Setting *accumulateIntensity;
+	if (OScDev_CHECK(err, OScDev_Setting_Create(&accumulateIntensity, "IntensityImagesAreCumulative",
+		OScDev_ValueType_Bool, &SettingImpl_IntensityImagesCumulative, device)))
+		goto error;
+	OScDev_PtrArray_Append(*settings, accumulateIntensity);
 
 	for (int i = 0; i < NUM_MARKER_BITS; ++i) {
 		struct MarkerActiveEdgeSettingData *data = calloc(1, sizeof(struct MarkerActiveEdgeSettingData));
