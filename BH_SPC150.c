@@ -22,6 +22,7 @@ static void PopulateDefaultParameters(struct BH_PrivateData *data)
 	memset(data, 0, sizeof(struct BH_PrivateData));
 
 	data->channelMask = 1; // Enable channel 0 only by default
+	data->accumulateIntensity = true;
 
 	for (int i = 0; i < NUM_MARKER_BITS; ++i) {
 		data->markerActiveEdges[i] = MarkerPolarityRisingEdge;

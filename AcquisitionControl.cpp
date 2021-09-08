@@ -196,6 +196,8 @@ int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 		return 1; // No channel enabled
 	}
 
+	bool accumulateIntensity = GetData(device)->accumulateIntensity;
+
 	bool lineMarkersAtLineEnds;
 	switch (GetData(device)->pixelMappingMode) {
 	case PixelMappingModeLineStartMarkers:
@@ -259,7 +261,7 @@ int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 	try {
 		completion->AddProcess("ProcessingSetup");
 		auto stream_and_done = SetUpProcessing(width, height, nFrames,
-			channelMask, lineDelay, lineTime, lineMarkerBit, acq,
+			channelMask, accumulateIntensity, lineDelay, lineTime, lineMarkerBit, acq,
 			[acqState]() mutable { RequestAcquisitionStop(acqState); },
 			spcWriter, sdtWriter, completion);
 		stream = std::get<0>(stream_and_done);

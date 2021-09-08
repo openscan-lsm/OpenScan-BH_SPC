@@ -47,6 +47,8 @@ struct BH_PrivateData
 
 	uint16_t channelMask;
 
+	bool accumulateIntensity;
+
 	// External marker configuration
 	enum MarkerPolarity  markerActiveEdges[NUM_MARKER_BITS];
 	uint32_t pixelMarkerBit; // no pixel marker iff >= NUM_MARKER_BITS

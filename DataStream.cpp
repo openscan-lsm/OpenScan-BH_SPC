@@ -119,14 +119,24 @@ static void PumpDeviceEvents(std::shared_ptr<EventStream<E>> stream,
 
 
 template <typename T>
-static std::shared_ptr<PixelPhotonProcessor> MakeCumulativeHistogrammer(
+static std::shared_ptr<PixelPhotonProcessor> MakeNoncumulativeHistogrammer(
 	uint32_t histoBits, uint32_t inputBits, uint32_t width, uint32_t height,
 	std::shared_ptr<HistogramProcessor<T>> downstream)
 {
 	Histogram<T> frameHisto(histoBits, inputBits, true, width, height);
+	return std::make_shared<Histogrammer<T>>(std::move(frameHisto),
+		downstream);
+}
+
+
+template <typename T>
+static std::shared_ptr<PixelPhotonProcessor> MakeCumulativeHistogrammer(
+	uint32_t histoBits, uint32_t inputBits, uint32_t width, uint32_t height,
+	std::shared_ptr<HistogramProcessor<T>> downstream)
+{
 	Histogram<T> cumulHisto(histoBits, inputBits, true, width, height);
 	cumulHisto.Clear();
-	return std::make_shared<Histogrammer<T>>(std::move(frameHisto),
+	return MakeNoncumulativeHistogrammer<T>(histoBits, inputBits, width, height,
 		std::make_shared<HistogramAccumulator<T>>(std::move(cumulHisto),
 			downstream));
 }
@@ -137,7 +147,7 @@ static std::shared_ptr<PixelPhotonProcessor> MakeCumulativeHistogrammer(
 // until processing finishes (or else destructor will block).
 std::tuple<std::shared_ptr<EventStream<BHSPCEvent>>, std::future<void>>
 SetUpProcessing(uint32_t width, uint32_t height, uint32_t maxFrames,
-	std::bitset<16> channelMask,
+	std::bitset<16> channelMask, bool accumulateIntensity,
 	int32_t lineDelay, uint32_t lineTime, uint32_t lineMarkerBit,
 	OScDev_Acquisition* acquisition, std::function<void(void)> stopFunc,
 	std::shared_ptr<DeviceEventProcessor> additionalProcessor,
@@ -152,8 +162,11 @@ SetUpProcessing(uint32_t width, uint32_t height, uint32_t maxFrames,
 
 	auto intensitySink = std::make_shared<IntensityImageSink>(
 		acquisition, stopFunc, completion);
-	auto intensityAccumulator = MakeCumulativeHistogrammer<SampleType>(
-		intensityBits, inputBits, width, height, intensitySink);
+	auto intensityAccumulator = accumulateIntensity ?
+		MakeCumulativeHistogrammer<SampleType>(intensityBits, inputBits,
+			width, height, intensitySink) :
+		MakeNoncumulativeHistogrammer<SampleType>(intensityBits, inputBits,
+			width, height, intensitySink);
 
 	// We construct a single-channel intensity image as the sum of all enabled
 	// channels (for now, at least).
