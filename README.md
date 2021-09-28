@@ -1,14 +1,13 @@
-OpenScan device module for Becker & Hickl Single Photon Counters
-================================================================
+# OpenScan device module for Becker & Hickl Single Photon Counters
 
-How to build
-------------
+## How to build
 
 Currently this module is built with Visual Sutdio 2019. The following
 dependencies must be supplied:
 
-- The **BH SPCM DLL**. This should be installed together with the SPCM software
-  in `C:\Program Files (x86)\BH\SPCM\DLL`.
+- The **BH SPCM DLL**. This should be installed together with the [SPCM
+  software](https://www.becker-hickl.com/products/tcspc-package/#product-download)
+  in `C:\Program Files (x86)\BH\SPCM\DLL` (even if 64-bit).
 
 - The file `C:\Program Files (x86)\BH\SPCM\SPC_data_file_structure.h`, also
   installed with the BH SPCM software. A patched version of this file is used
@@ -27,23 +26,20 @@ dependencies must be supplied:
   See instructions below to download and build.
 
 - **[CMake](https://cmake.org/)** is needed to build zlib and libzip. Install
-  the Windows binary from https://cmake.org/download/, or install from the
-  Visual Studio 2019 installer (not sure if also bundled with earlier
-  versions).
+  the Windows binary from https://cmake.org/download/ if you did not install it
+  with the Visual Studio installer.
 
 - The instructions below use **[Ninja](https://ninja-build.org/)** to build
-  zlib and libzip (although the Visual Studio IDE can also be used). Install
-  the Windows binary from https://github.com/ninja-build/ninja/releases, or
-  install from the Visual Studio 2019 installer.
+  zlib and libzip. Install the Windows binary from
+  https://github.com/ninja-build/ninja/releases if you did not install it with
+  the Visual Studio installer.
 
 - Make sure CMake and Ninja are in `PATH`. (Nothing needs to be done if they
   were installed with Visual Studio.)
 
-Once zlib and libzip have been built, `OpenScan-BH_SPC` can be built normally
-in Visual Studio.
+Detailed steps follow.
 
-Patching `SPC_data_file_structure.h`
-------------------------------------
+### Patching `SPC_data_file_structure.h`
 
 This header (at least the version tested) does not compile. Run the following
 command **in Git Bash** to produce a patched version, which is included by our
@@ -53,8 +49,7 @@ code:
 ./fix-spc-data-file-structure-h.sh
 ```
 
-Building zlib
--------------
+### Building zlib
 
 These instructions are for building a 64-bit version on 64-bit Windows.
 
@@ -96,8 +91,7 @@ the first time we configure.)
 For 32-bit builds, use the appropriate version of the VS Command Prompt, and
 replace `x64` with `x86` in the install prefix.
 
-Building libzip
----------------
+### Building libzip
 
 These instructions are for building a 64-bit version on 64-bit Windows. We
 build a version that only supports deflate (zlib) compression, since that is
@@ -151,8 +145,12 @@ ninja install
 (Of the `ENABLE_*=NO` flags, the important one is Windows Cryptography as
 leaving it enabled currently results in a compile error.)
 
+### Building the main project
 
-Code of Conduct
----------------
+After the above steps, you should be able to build OpenScanBHSPC in Visual
+Studio without any additional configuration.
+
+
+## Code of Conduct
 
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg)](https://github.com/openscan-lsm/OpenScan/blob/main/CODE_OF_CONDUCT.md)
