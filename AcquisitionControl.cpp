@@ -210,8 +210,7 @@ int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 		return 1; // Unimplemented mode
 	}
 	double lineDelayPixels = GetData(device)->lineDelayPx;
-	std::string spcFilename(GetData(device)->spcFilename);
-	std::string sdtFilename(GetData(device)->sdtFilename);
+	std::string fileNamePrefix(GetData(device)->fileNamePrefix);
 	bool compressHistograms = GetData(device)->compressHistograms;
 	bool checkSync = GetData(device)->checkSyncBeforeAcq;
 
@@ -242,13 +241,12 @@ int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 	completion->AddProcess("Setup");
 
 	std::shared_ptr<SPCFileWriter> spcWriter;
-	if (!spcFilename.empty()) {
-		spcWriter = std::make_shared<SPCFileWriter>(spcFilename, fileHeader, completion);
-	}
-
 	std::shared_ptr<SDTWriter> sdtWriter;
-	if (!sdtFilename.empty()) {
-		sdtWriter = std::make_shared<SDTWriter>(sdtFilename,
+
+	if (!fileNamePrefix.empty()) {
+		spcWriter = std::make_shared<SPCFileWriter>(fileNamePrefix + ".spc", fileHeader, completion);
+
+		sdtWriter = std::make_shared<SDTWriter>(fileNamePrefix + ".sdt",
 			static_cast<unsigned>(channelMask.count()), completion);
 		sdtWriter->SetPreacquisitionData(GetData(device)->moduleNr,
 			8, width, height, compressHistograms, pixelRateHz, false,

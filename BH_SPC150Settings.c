@@ -392,43 +392,22 @@ static OScDev_SettingImpl SettingImpl_CheckSync = {
 };
 
 
-static OScDev_Error GetSPCFilename(OScDev_Setting *setting, char *value)
+static OScDev_Error GetFileNamePrefix(OScDev_Setting *setting, char *value)
 {
-	strcpy(value, GetSettingDeviceData(setting)->spcFilename);
+	strcpy(value, GetSettingDeviceData(setting)->fileNamePrefix);
 	return OScDev_OK;
 }
 
 
-static OScDev_Error SetSPCFilename(OScDev_Setting *setting, const char *value)
+static OScDev_Error SetFileNamePrefix(OScDev_Setting *setting, const char *value)
 {
-	strcpy(GetSettingDeviceData(setting)->spcFilename, value);
+	strcpy(GetSettingDeviceData(setting)->fileNamePrefix, value);
 	return OScDev_OK;
 }
 
-
-static OScDev_SettingImpl SettingImpl_SPCFilename = {
-	.GetString = GetSPCFilename,
-	.SetString = SetSPCFilename,
-};
-
-
-static OScDev_Error GetSDTFilename(OScDev_Setting *setting, char *value)
-{
-	strcpy(value, GetSettingDeviceData(setting)->sdtFilename);
-	return OScDev_OK;
-}
-
-
-static OScDev_Error SetSDTFilename(OScDev_Setting *setting, const char *value)
-{
-	strcpy(GetSettingDeviceData(setting)->sdtFilename, value);
-	return OScDev_OK;
-}
-
-
-static OScDev_SettingImpl SettingImpl_SDTFilename = {
-	.GetString = GetSDTFilename,
-	.SetString = SetSDTFilename,
+static OScDev_SettingImpl SettingImpl_FileNamePrefix = {
+	.GetString = GetFileNamePrefix,
+	.SetString = SetFileNamePrefix,
 };
 
 
@@ -553,17 +532,11 @@ OScDev_Error BH_MakeSettings(OScDev_Device *device, OScDev_PtrArray **settings)
 		goto error;
 	OScDev_PtrArray_Append(*settings, checkSync);
 
-	OScDev_Setting *spcFilename;
-	if (OScDev_CHECK(err, OScDev_Setting_Create(&spcFilename, "SPCFilename", OScDev_ValueType_String,
-		&SettingImpl_SPCFilename, device)))
+	OScDev_Setting *fileNamePrefix;
+	if (OScDev_CHECK(err, OScDev_Setting_Create(&fileNamePrefix, "FLIMFileNamePrefix", OScDev_ValueType_String,
+		&SettingImpl_FileNamePrefix, device)))
 		goto error;
-	OScDev_PtrArray_Append(*settings, spcFilename);
-
-	OScDev_Setting *sdtFilename;
-	if (OScDev_CHECK(err, OScDev_Setting_Create(&sdtFilename, "SDTFilename", OScDev_ValueType_String,
-		&SettingImpl_SDTFilename, device)))
-		goto error;
-	OScDev_PtrArray_Append(*settings, sdtFilename);
+	OScDev_PtrArray_Append(*settings, fileNamePrefix);
 
 	OScDev_Setting *sdtCompression;
 	if (OScDev_CHECK(err, OScDev_Setting_Create(&sdtCompression, "SDTCompression", OScDev_ValueType_Bool,
