@@ -45,6 +45,9 @@
     <ClInclude Include="RateCounters.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="UniqueFileName.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="BH_SPC150.c">
@@ -72,6 +75,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="RateCounters.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="UniqueFileName.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

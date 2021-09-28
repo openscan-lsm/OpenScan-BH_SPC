@@ -4,6 +4,7 @@
 #include "DataStream.hpp"
 #include "FIFOAcquisition.hpp"
 #include "SPCFileWriter.hpp"
+#include "UniqueFileName.h"
 
 #include <bitset>
 #include <cmath>
@@ -244,9 +245,13 @@ int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 	std::shared_ptr<SDTWriter> sdtWriter;
 
 	if (!fileNamePrefix.empty()) {
-		spcWriter = std::make_shared<SPCFileWriter>(fileNamePrefix + ".spc", fileHeader, completion);
+		const char* const extensions[] = { ".spc", ".sdt" };
+		char temp[512];
+		std::string uniquePrefix = UniqueFileName(fileNamePrefix.c_str(), extensions, 2, temp, sizeof(temp));
 
-		sdtWriter = std::make_shared<SDTWriter>(fileNamePrefix + ".sdt",
+		spcWriter = std::make_shared<SPCFileWriter>(uniquePrefix + ".spc", fileHeader, completion);
+
+		sdtWriter = std::make_shared<SDTWriter>(uniquePrefix + ".sdt",
 			static_cast<unsigned>(channelMask.count()), completion);
 		sdtWriter->SetPreacquisitionData(GetData(device)->moduleNr,
 			8, width, height, compressHistograms, pixelRateHz, false,
