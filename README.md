@@ -5,6 +5,9 @@
 Currently this module is built with Visual Sutdio 2019. The following
 dependencies must be supplied:
 
+- **OpenScanDeviceLib**, part of
+  [OpenScanLib](https://github.com/openscan-lsm/OpenScanLib).
+
 - The **BH SPCM DLL**. This should be installed together with the [SPCM
   software](https://www.becker-hickl.com/products/tcspc-package/#product-download)
   in `C:\Program Files (x86)\BH\SPCM\DLL` (even if 64-bit).
@@ -38,6 +41,12 @@ dependencies must be supplied:
   were installed with Visual Studio.)
 
 Detailed steps follow.
+
+### Building OpenScanDeviceLib
+
+Clone OpenScanLib in the same directory containing this project, and build
+OpenScanDeviceLib using Visual Studio (for the desired platform and
+configurations).
 
 ### Patching `SPC_data_file_structure.h`
 
