@@ -59,8 +59,8 @@ struct BH_PrivateData
 	enum PixelMappingMode pixelMappingMode;
 	double lineDelayPx; // Delay of photons relative to markers
 
-	char spcFilename[OScDev_MAX_STR_SIZE];
-	char sdtFilename[OScDev_MAX_STR_SIZE];
+	char fileNamePrefix[OScDev_MAX_STR_SIZE];
+
 	bool compressHistograms;
 
 	bool checkSyncBeforeAcq;

@@ -4,6 +4,7 @@
 #include "DataStream.hpp"
 #include "FIFOAcquisition.hpp"
 #include "SPCFileWriter.hpp"
+#include "UniqueFileName.h"
 
 #include <bitset>
 #include <cmath>
@@ -210,8 +211,7 @@ int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 		return 1; // Unimplemented mode
 	}
 	double lineDelayPixels = GetData(device)->lineDelayPx;
-	std::string spcFilename(GetData(device)->spcFilename);
-	std::string sdtFilename(GetData(device)->sdtFilename);
+	std::string fileNamePrefix(GetData(device)->fileNamePrefix);
 	bool compressHistograms = GetData(device)->compressHistograms;
 	bool checkSync = GetData(device)->checkSyncBeforeAcq;
 
@@ -242,13 +242,16 @@ int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 	completion->AddProcess("Setup");
 
 	std::shared_ptr<SPCFileWriter> spcWriter;
-	if (!spcFilename.empty()) {
-		spcWriter = std::make_shared<SPCFileWriter>(spcFilename, fileHeader, completion);
-	}
-
 	std::shared_ptr<SDTWriter> sdtWriter;
-	if (!sdtFilename.empty()) {
-		sdtWriter = std::make_shared<SDTWriter>(sdtFilename,
+
+	if (!fileNamePrefix.empty()) {
+		const char* const extensions[] = { ".spc", ".sdt" };
+		char temp[512];
+		std::string uniquePrefix = UniqueFileName(fileNamePrefix.c_str(), extensions, 2, temp, sizeof(temp));
+
+		spcWriter = std::make_shared<SPCFileWriter>(uniquePrefix + ".spc", fileHeader, completion);
+
+		sdtWriter = std::make_shared<SDTWriter>(uniquePrefix + ".sdt",
 			static_cast<unsigned>(channelMask.count()), completion);
 		sdtWriter->SetPreacquisitionData(GetData(device)->moduleNr,
 			8, width, height, compressHistograms, pixelRateHz, false,
