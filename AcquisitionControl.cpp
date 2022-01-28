@@ -1,6 +1,7 @@
 #include "BH_SPC150Private.h"
 
 #include "AcquisitionCompletion.hpp"
+#include "DataSender.hpp"
 #include "DataStream.hpp"
 #include "FIFOAcquisition.hpp"
 #include "SPCFileWriter.hpp"
@@ -213,6 +214,7 @@ int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 	double lineDelayPixels = GetData(device)->lineDelayPx;
 	std::string fileNamePrefix(GetData(device)->fileNamePrefix);
 	bool compressHistograms = GetData(device)->compressHistograms;
+	uint16_t senderPort = GetData(device)->senderPort;
 	bool checkSync = GetData(device)->checkSyncBeforeAcq;
 
 	char fileHeader[4];
@@ -243,6 +245,7 @@ int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 
 	std::shared_ptr<SPCFileWriter> spcWriter;
 	std::shared_ptr<SDTWriter> sdtWriter;
+	std::shared_ptr<DataSender> dataSender;
 
 	if (!fileNamePrefix.empty()) {
 		const char* const extensions[] = { ".spc", ".sdt" };
@@ -262,13 +265,18 @@ int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 		}
 	}
 
+	if (senderPort) {
+		dataSender = std::make_shared<DataSender>(static_cast<unsigned>(channelMask.count()),
+			senderPort, completion);
+	}
+
 	std::shared_ptr<EventStream<BHSPCEvent>> stream;
 	try {
 		completion->AddProcess("ProcessingSetup");
 		auto stream_and_done = SetUpProcessing(width, height, nFrames,
 			channelMask, accumulateIntensity, lineDelay, lineTime, lineMarkerBit, acq,
 			[acqState]() mutable { RequestAcquisitionStop(acqState); },
-			spcWriter, sdtWriter, completion);
+			spcWriter, sdtWriter, dataSender, completion);
 		stream = std::get<0>(stream_and_done);
 		acqState->eventPumpingFinish = std::move(std::get<1>(stream_and_done));
 		completion->HandleFinish("ProcessingSetup");

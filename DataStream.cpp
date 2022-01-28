@@ -58,11 +58,14 @@ namespace {
 	class HistogramSink : public HistogramProcessor<SampleType> {
 		unsigned channel;
 		std::shared_ptr<SDTWriter> sdtWriter;
+		std::shared_ptr<DataSender> dataSender;
 
 	public:
-		HistogramSink(unsigned channel, std::shared_ptr<SDTWriter> sdtWriter) :
+		HistogramSink(unsigned channel, std::shared_ptr<SDTWriter> sdtWriter,
+			std::shared_ptr<DataSender> dataSender) :
 			channel(channel),
-			sdtWriter(sdtWriter)
+			sdtWriter(sdtWriter),
+			dataSender(dataSender)
 		{}
 
 		void HandleError(std::string const& message) override {
@@ -70,10 +73,18 @@ namespace {
 				sdtWriter->HandleError(message);
 				sdtWriter.reset();
 			}
+			if (dataSender) {
+				dataSender->HandleError(message);
+				dataSender.reset();
+			}
 		}
 
 		void HandleFrame(Histogram<SampleType> const& histogram) override {
-			// Nothing to do until we finish
+			// Only the final cumulative histogram is written to SDT.
+
+			if (dataSender) {
+				dataSender->SetHistogram(channel, histogram);
+			}
 		}
 
 		void HandleFinish(Histogram<SampleType>&& histogram, bool isCompleteFrame) override {
@@ -81,6 +92,10 @@ namespace {
 			if (sdtWriter) {
 				sdtWriter->SetHistogram(channel, std::move(histogram));
 				sdtWriter.reset();
+			}
+			if (dataSender) {
+				dataSender->Finish();
+				dataSender.reset();
 			}
 		}
 	};
@@ -152,6 +167,7 @@ SetUpProcessing(uint32_t width, uint32_t height, uint32_t maxFrames,
 	OScDev_Acquisition* acquisition, std::function<void(void)> stopFunc,
 	std::shared_ptr<DeviceEventProcessor> additionalProcessor,
 	std::shared_ptr<SDTWriter> histogramWriter,
+	std::shared_ptr<DataSender> histogramSender,
 	std::shared_ptr<AcquisitionCompletion> completion)
 {
 	uint32_t inputBits = 12;
@@ -182,14 +198,15 @@ SetUpProcessing(uint32_t width, uint32_t height, uint32_t maxFrames,
 	std::shared_ptr<PixelPhotonProcessor> pixelPhotonProcs = intensityProc;
 
 	// If saving histograms, create histogrammers for each enabled channel.
-	if (histogramWriter) {
+	if (histogramWriter || histogramSender) {
 		std::vector<std::shared_ptr<PixelPhotonProcessor>> histogrammers;
 		histogrammers.resize(channelMask.size());
 		int n = 0;
 		for (unsigned i = 0; i < channelMask.size(); ++i) {
 			if (!channelMask[i])
 				continue;
-			auto histoSink = std::make_shared<HistogramSink>(n, histogramWriter);
+			auto histoSink = std::make_shared<HistogramSink>(n, histogramWriter,
+				histogramSender);
 			auto histoProc = MakeCumulativeHistogrammer<SampleType>(
 				histoBits, inputBits, width, height, histoSink);
 			histogrammers[i] = histoProc;

@@ -48,6 +48,18 @@
     <ClInclude Include="UniqueFileName.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="DataSender.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="TempDir.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MemMapFile.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="UDPSender.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="BH_SPC150.c">

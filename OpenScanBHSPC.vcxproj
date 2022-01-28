@@ -100,7 +100,7 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>..\OpenScanLib\$(Platform)\$(Configuration);.\libzip\$(Platform)\$(Configuration)\lib;.\zlib\$(Platform)\$(Configuration)\lib;c:\Program Files (x86)\BH\SPCM\DLL\LIB\MSVC;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>OpenScanDeviceLib.lib;zip.lib;zlibstaticd.lib;spcm.lib;shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>OpenScanDeviceLib.lib;zip.lib;zlibstaticd.lib;spcm.lib;shlwapi.lib;Ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -119,7 +119,7 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>..\OpenScanLib\$(Platform)\$(Configuration);.\libzip\$(Platform)\$(Configuration)\lib;.\zlib\$(Platform)\$(Configuration)\lib;c:\Program Files (x86)\BH\SPCM\DLL\LIB\MSVC64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>OpenScanDeviceLib.lib;zip.lib;zlibstaticd.lib;spcm64.lib;shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>OpenScanDeviceLib.lib;zip.lib;zlibstaticd.lib;spcm64.lib;shlwapi.lib;Ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -141,7 +141,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <AdditionalLibraryDirectories>..\OpenScanLib\$(Platform)\$(Configuration);.\libzip\$(Platform)\$(Configuration)\lib;.\zlib\$(Platform)\$(Configuration)\lib;c:\Program Files (x86)\BH\SPCM\DLL\LIB\MSVC;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>OpenScanDeviceLib.lib;zip.lib;zlibstatic.lib;spcm.lib;shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>OpenScanDeviceLib.lib;zip.lib;zlibstatic.lib;spcm.lib;shlwapi.lib;Ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -163,19 +163,23 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <AdditionalLibraryDirectories>..\OpenScanLib\$(Platform)\$(Configuration);.\libzip\$(Platform)\$(Configuration)\lib;.\zlib\$(Platform)\$(Configuration)\lib;c:\Program Files (x86)\BH\SPCM\DLL\LIB\MSVC64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>OpenScanDeviceLib.lib;zip.lib;zlibstatic.lib;spcm64.lib;shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>OpenScanDeviceLib.lib;zip.lib;zlibstatic.lib;spcm64.lib;shlwapi.lib;Ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="AcquisitionCompletion.hpp" />
     <ClInclude Include="AcquisitionControl.h" />
     <ClInclude Include="BH_SPC150Private.h" />
+    <ClInclude Include="DataSender.hpp" />
     <ClInclude Include="DataStream.hpp" />
     <ClInclude Include="FIFOAcquisition.hpp" />
+    <ClInclude Include="MemMapFile.hpp" />
     <ClInclude Include="RateCounters.h" />
     <ClInclude Include="RateCounters.hpp" />
     <ClInclude Include="SDTFile.h" />
     <ClInclude Include="SDTFileWriter.hpp" />
+    <ClInclude Include="TempDir.hpp" />
+    <ClInclude Include="UDPSender.hpp" />
     <ClInclude Include="UniqueFileName.h" />
     <ClInclude Include="ZipCompress.h" />
   </ItemGroup>

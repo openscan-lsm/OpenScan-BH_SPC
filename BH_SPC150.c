@@ -34,6 +34,7 @@ static void PopulateDefaultParameters(struct BH_PrivateData *data)
 	data->pixelMappingMode = PixelMappingModeLineEndMarkers;
 	data->lineDelayPx = 0.0;
 	strcpy(data->fileNamePrefix, "OpenScan-BHSPC");
+	data->senderPort = 0;
 	data->checkSyncBeforeAcq = true;
 }
 

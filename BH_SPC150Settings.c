@@ -411,6 +411,26 @@ static OScDev_SettingImpl SettingImpl_FileNamePrefix = {
 };
 
 
+static OScDev_Error GetSenderPort(OScDev_Setting *setting, int32_t *value)
+{
+	*value = GetSettingDeviceData(setting)->senderPort;
+	return OScDev_OK;
+}
+
+static OScDev_Error SetSenderPort(OScDev_Setting *setting, int32_t value)
+{
+	if (value < 0 || value > 65535)
+		value = 0;
+	GetSettingDeviceData(setting)->senderPort = value;
+	return OScDev_OK;
+}
+
+static OScDev_SettingImpl SettingImpl_SenderPort = {
+	.GetInt32 = GetSenderPort,
+	.SetInt32 = SetSenderPort,
+};
+
+
 static OScDev_Error GetSDTCompression(OScDev_Setting *setting, bool *value)
 {
 	*value = GetSettingDeviceData(setting)->compressHistograms;
@@ -537,6 +557,12 @@ OScDev_Error BH_MakeSettings(OScDev_Device *device, OScDev_PtrArray **settings)
 		&SettingImpl_FileNamePrefix, device)))
 		goto error;
 	OScDev_PtrArray_Append(*settings, fileNamePrefix);
+
+	OScDev_Setting *senderPort;
+	if (OScDev_CHECK(err, OScDev_Setting_Create(&senderPort, "SendFLIMHistogramsToUDPPort", OScDev_ValueType_Int32,
+		&SettingImpl_SenderPort, device)))
+		goto error;
+	OScDev_PtrArray_Append(*settings, senderPort);
 
 	OScDev_Setting *sdtCompression;
 	if (OScDev_CHECK(err, OScDev_Setting_Create(&sdtCompression, "SDTCompression", OScDev_ValueType_Bool,

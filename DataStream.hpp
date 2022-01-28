@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AcquisitionCompletion.hpp"
+#include "DataSender.hpp"
 #include "SPCFileWriter.hpp"
 #include "SDTFileWriter.hpp"
 
@@ -23,4 +24,5 @@ SetUpProcessing(uint32_t width, uint32_t height, uint32_t maxFrames,
 	OScDev_Acquisition* acquisition, std::function<void(void)> stopFunc,
 	std::shared_ptr<DeviceEventProcessor> additionalProcessor,
 	std::shared_ptr<SDTWriter> histogramWriter,
+	std::shared_ptr<DataSender> histogramSender,
 	std::shared_ptr<AcquisitionCompletion> completion);
