@@ -192,7 +192,7 @@ private:
 			writeStarted = true;
 		}
 
-		asyncWriteCompletion = std::async([self = shared_from_this()] {
+		asyncWriteCompletion = std::async(std::launch::async, [self = shared_from_this()] {
 			std::vector<uint16_t const*> histoDataPtrs;
 			for (auto const& h : self->histograms) {
 				histoDataPtrs.emplace_back(h.Get());
