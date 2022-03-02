@@ -1,6 +1,7 @@
 #include "BH_SPC150Private.h"
 
 #include "AcquisitionCompletion.hpp"
+#include "DataSender.hpp"
 #include "DataStream.hpp"
 #include "FIFOAcquisition.hpp"
 #include "SPCFileWriter.hpp"
@@ -213,6 +214,7 @@ int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 	double lineDelayPixels = GetData(device)->lineDelayPx;
 	std::string fileNamePrefix(GetData(device)->fileNamePrefix);
 	bool compressHistograms = GetData(device)->compressHistograms;
+	uint16_t senderPort = GetData(device)->senderPort;
 	bool checkSync = GetData(device)->checkSyncBeforeAcq;
 
 	char fileHeader[4];
@@ -243,21 +245,29 @@ int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 
 	std::shared_ptr<SPCFileWriter> spcWriter;
 	std::shared_ptr<SDTWriter> sdtWriter;
+	std::shared_ptr<DataSender> dataSender;
 
 	if (!fileNamePrefix.empty()) {
 		const char* const extensions[] = { ".spc", ".sdt" };
 		char temp[512];
-		std::string uniquePrefix = UniqueFileName(fileNamePrefix.c_str(), extensions, 2, temp, sizeof(temp));
+		if (UniqueFileName(fileNamePrefix.c_str(), extensions, 2, temp, sizeof(temp))) {
+			std::string uniquePrefix = temp;
 
-		spcWriter = std::make_shared<SPCFileWriter>(uniquePrefix + ".spc", fileHeader, completion);
+			spcWriter = std::make_shared<SPCFileWriter>(uniquePrefix + ".spc", fileHeader, completion);
 
-		sdtWriter = std::make_shared<SDTWriter>(uniquePrefix + ".sdt",
-			static_cast<unsigned>(channelMask.count()), completion);
-		sdtWriter->SetPreacquisitionData(GetData(device)->moduleNr,
-			8, width, height, compressHistograms, pixelRateHz, false,
-			GetData(device)->pixelMarkerBit < NUM_MARKER_BITS,
-			GetData(device)->lineMarkerBit < NUM_MARKER_BITS,
-			GetData(device)->frameMarkerBit < NUM_MARKER_BITS);
+			sdtWriter = std::make_shared<SDTWriter>(uniquePrefix + ".sdt",
+				static_cast<unsigned>(channelMask.count()), completion);
+			sdtWriter->SetPreacquisitionData(GetData(device)->moduleNr,
+				8, width, height, compressHistograms, pixelRateHz, false,
+				GetData(device)->pixelMarkerBit < NUM_MARKER_BITS,
+				GetData(device)->lineMarkerBit < NUM_MARKER_BITS,
+				GetData(device)->frameMarkerBit < NUM_MARKER_BITS);
+		}
+	}
+
+	if (senderPort) {
+		dataSender = std::make_shared<DataSender>(static_cast<unsigned>(channelMask.count()),
+			senderPort, completion);
 	}
 
 	std::shared_ptr<EventStream<BHSPCEvent>> stream;
@@ -266,7 +276,7 @@ int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 		auto stream_and_done = SetUpProcessing(width, height, nFrames,
 			channelMask, accumulateIntensity, lineDelay, lineTime, lineMarkerBit, acq,
 			[acqState]() mutable { RequestAcquisitionStop(acqState); },
-			spcWriter, sdtWriter, completion);
+			spcWriter, sdtWriter, dataSender, completion);
 		stream = std::get<0>(stream_and_done);
 		acqState->eventPumpingFinish = std::move(std::get<1>(stream_and_done));
 		completion->HandleFinish("ProcessingSetup");

@@ -2,6 +2,7 @@
 
 #include <OpenScanDeviceLib.h>
 
+#define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 
 
@@ -62,6 +63,9 @@ struct BH_PrivateData
 	char fileNamePrefix[OScDev_MAX_STR_SIZE];
 
 	bool compressHistograms;
+
+	// Port number on local host to which UDP messages are sent
+	uint16_t senderPort;
 
 	bool checkSyncBeforeAcq;
 
