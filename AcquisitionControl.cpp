@@ -247,17 +247,19 @@ int StartAcquisition(OScDev_Device* device, OScDev_Acquisition* acq)
 	if (!fileNamePrefix.empty()) {
 		const char* const extensions[] = { ".spc", ".sdt" };
 		char temp[512];
-		std::string uniquePrefix = UniqueFileName(fileNamePrefix.c_str(), extensions, 2, temp, sizeof(temp));
+		if (UniqueFileName(fileNamePrefix.c_str(), extensions, 2, temp, sizeof(temp))) {
+			std::string uniquePrefix = temp;
 
-		spcWriter = std::make_shared<SPCFileWriter>(uniquePrefix + ".spc", fileHeader, completion);
+			spcWriter = std::make_shared<SPCFileWriter>(uniquePrefix + ".spc", fileHeader, completion);
 
-		sdtWriter = std::make_shared<SDTWriter>(uniquePrefix + ".sdt",
-			static_cast<unsigned>(channelMask.count()), completion);
-		sdtWriter->SetPreacquisitionData(GetData(device)->moduleNr,
-			8, width, height, compressHistograms, pixelRateHz, false,
-			GetData(device)->pixelMarkerBit < NUM_MARKER_BITS,
-			GetData(device)->lineMarkerBit < NUM_MARKER_BITS,
-			GetData(device)->frameMarkerBit < NUM_MARKER_BITS);
+			sdtWriter = std::make_shared<SDTWriter>(uniquePrefix + ".sdt",
+				static_cast<unsigned>(channelMask.count()), completion);
+			sdtWriter->SetPreacquisitionData(GetData(device)->moduleNr,
+				8, width, height, compressHistograms, pixelRateHz, false,
+				GetData(device)->pixelMarkerBit < NUM_MARKER_BITS,
+				GetData(device)->lineMarkerBit < NUM_MARKER_BITS,
+				GetData(device)->frameMarkerBit < NUM_MARKER_BITS);
+		}
 	}
 
 	std::shared_ptr<EventStream<BHSPCEvent>> stream;

@@ -7,7 +7,7 @@
 #include <stdint.h>
 
 const char* UniqueFileName(const char* prefix, const char* const* extensions, size_t ext_size, char* result, size_t result_size) {
-	for (int i = 0; i < 100; i++) {
+	for (int i = 0; i < 10000; i++) {
 		int formatted_length = snprintf(result, result_size, "%s_%04d", prefix, i);
 		if (formatted_length < 0 || formatted_length >= result_size) {
 			return NULL;
