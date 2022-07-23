@@ -1,0 +1,1 @@
+option('vcpkgdir', type: 'string', description: 'Path to vcpkg directory')

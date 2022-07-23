@@ -1,0 +1,7 @@
+[wrap-git]
+url = https://github.com/openscan-lsm/OpenScanLib.git
+revision = 67e1180bcf87d5abbe16ebb739724a8b9952945e
+depth = 1
+
+[provide]
+dependency_names = OpenScanLib, OpenScanDeviceLib
