@@ -93,7 +93,7 @@
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32;_DEBUG;_WINDOWS;_USRDLL;OPENSCANBHSPC_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>..\OpenScanLib\OpenScanDeviceLib\include;.\generated_include;C:\Program Files (x86)\BH\SPCM\DLL;.\FLIMEvents\include;.\libzip\$(Platform)\$(Configuration)\include;.\zlib\$(Platform)\$(Configuration)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\OpenScanLib\OpenScanDeviceLib\include;.\generated_include;C:\Program Files (x86)\BH\SPCM\DLL;.\subprojects\FLIMEvents\include;.\libzip\$(Platform)\$(Configuration)\include;.\zlib\$(Platform)\$(Configuration)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DisableSpecificWarnings>4800;%(DisableSpecificWarnings)</DisableSpecificWarnings>
     </ClCompile>
     <Link>
@@ -111,7 +111,7 @@
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_DEBUG;_WINDOWS;_USRDLL;OPENSCANBHSPC_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>..\OpenScanLib\OpenScanDeviceLib\include;.\generated_include;C:\Program Files (x86)\BH\SPCM\DLL;.\FLIMEvents\include;.\libzip\$(Platform)\$(Configuration)\include;.\zlib\$(Platform)\$(Configuration)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\OpenScanLib\OpenScanDeviceLib\include;.\generated_include;C:\Program Files (x86)\BH\SPCM\DLL;.\subprojects\FLIMEvents\include;.\libzip\$(Platform)\$(Configuration)\include;.\zlib\$(Platform)\$(Configuration)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
       <DisableSpecificWarnings>4800;%(DisableSpecificWarnings)</DisableSpecificWarnings>
     </ClCompile>
@@ -132,7 +132,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32;NDEBUG;_WINDOWS;_USRDLL;OPENSCANBHSPC_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>..\OpenScanLib\OpenScanDeviceLib\include;.\generated_include;C:\Program Files (x86)\BH\SPCM\DLL;.\FLIMEvents\include;.\libzip\$(Platform)\$(Configuration)\include;.\zlib\$(Platform)\$(Configuration)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\OpenScanLib\OpenScanDeviceLib\include;.\generated_include;C:\Program Files (x86)\BH\SPCM\DLL;.\subprojects\FLIMEvents\include;.\libzip\$(Platform)\$(Configuration)\include;.\zlib\$(Platform)\$(Configuration)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DisableSpecificWarnings>4800;%(DisableSpecificWarnings)</DisableSpecificWarnings>
     </ClCompile>
     <Link>
@@ -154,7 +154,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;NDEBUG;_WINDOWS;_USRDLL;OPENSCANBHSPC_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>..\OpenScanLib\OpenScanDeviceLib\include;.\generated_include;C:\Program Files (x86)\BH\SPCM\DLL;.\FLIMEvents\include;.\libzip\$(Platform)\$(Configuration)\include;.\zlib\$(Platform)\$(Configuration)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\OpenScanLib\OpenScanDeviceLib\include;.\generated_include;C:\Program Files (x86)\BH\SPCM\DLL;.\subprojects\FLIMEvents\include;.\libzip\$(Platform)\$(Configuration)\include;.\zlib\$(Platform)\$(Configuration)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DisableSpecificWarnings>4800;%(DisableSpecificWarnings)</DisableSpecificWarnings>
     </ClCompile>
     <Link>
