@@ -7,7 +7,6 @@
 #include <memory>
 #include <stdexcept>
 
-
 // Assign pixels to photons using line clock only
 class LineClockPixellator : public DecodedEventProcessor {
     uint32_t const pixelsPerLine;
@@ -21,11 +20,11 @@ class LineClockPixellator : public DecodedEventProcessor {
     uint64_t latestTimestamp; // Latest observed macro-time
 
     // Cumulative line numbers (no reset on new frame)
-    uint64_t nextLine; // Incremented on line startTime
+    uint64_t nextLine;    // Incremented on line startTime
     uint64_t currentLine; // Incremented on line finish
-    // "Line startTime" is reception of line marker, at which point the line startTime
-    // and finish macro-times are determined. "Line finish" is when we
-    // determine that all photons for the line have been emitted downstream.
+    // "Line startTime" is reception of line marker, at which point the line
+    // startTime and finish macro-times are determined. "Line finish" is when
+    // we determine that all photons for the line have been emitted downstream.
     // If nextLine > currentLine, we are in currentLine.
     // If nextLine == currentLine, we are between (nextLine - 1) and nextLine.
 
@@ -45,12 +44,10 @@ class LineClockPixellator : public DecodedEventProcessor {
         explicit Error(std::string m) : message(m) {}
     };
 
-private:
-    void UpdateTimeRange(uint64_t macrotime) {
-        latestTimestamp = macrotime;
-    }
+  private:
+    void UpdateTimeRange(uint64_t macrotime) { latestTimestamp = macrotime; }
 
-    void EnqueuePhoton(ValidPhotonEvent const& event) {
+    void EnqueuePhoton(ValidPhotonEvent const &event) {
         if (!downstream) {
             return; // Avoid buffering post-error
         }
@@ -68,17 +65,16 @@ private:
         uint64_t startTime;
         if (lineDelay >= 0) {
             startTime = lineMarkerTime + lineDelay;
-        }
-        else {
+        } else {
             uint64_t minusDelay = -lineDelay;
             if (lineMarkerTime < minusDelay) {
                 throw Error("Pixel at negative time");
             }
             startTime = lineMarkerTime - minusDelay;
         }
-		if (startTime < lineStartTime + lineTime && lineStartTime != -1) {
-			throw Error("Pixels overlapping in time");
-		}
+        if (startTime < lineStartTime + lineTime && lineStartTime != -1) {
+            throw Error("Pixels overlapping in time");
+        }
         return startTime;
     }
 
@@ -122,12 +118,13 @@ private:
         }
     }
 
-    void EmitPhoton(ValidPhotonEvent const& event) {
+    void EmitPhoton(ValidPhotonEvent const &event) {
         PixelPhotonEvent newEvent;
         newEvent.frame = static_cast<uint32_t>(currentLine / linesPerFrame);
         newEvent.y = static_cast<uint32_t>(currentLine % linesPerFrame);
         auto timeInLine = event.macrotime - lineStartTime;
-        newEvent.x = static_cast<uint32_t>(pixelsPerLine * timeInLine / lineTime);
+        newEvent.x =
+            static_cast<uint32_t>(pixelsPerLine * timeInLine / lineTime);
         newEvent.route = event.route;
         newEvent.microtime = event.microtime;
         if (downstream) {
@@ -154,7 +151,7 @@ private:
 
         // Discard all photons before current line
         while (!pendingPhotons.empty()) {
-            auto const& photon = pendingPhotons.front();
+            auto const &photon = pendingPhotons.front();
             if (photon.macrotime >= lineStartTime) {
                 break;
             }
@@ -164,7 +161,7 @@ private:
         // Emit all buffered photons for current line
         auto lineEndTime = lineStartTime + lineTime;
         while (!pendingPhotons.empty()) {
-            auto const& photon = pendingPhotons.front();
+            auto const &photon = pendingPhotons.front();
             if (photon.macrotime >= lineEndTime) {
                 break;
             }
@@ -176,8 +173,7 @@ private:
         if (latestTimestamp >= lineEndTime) {
             FinishLine();
             return true; // There may be more lines to process
-        }
-        else {
+        } else {
             return false; // Still in line but no more photons
         }
     }
@@ -192,8 +188,7 @@ private:
         try {
             while (ProcessLinePhotons())
                 ;
-        }
-        catch (Error const& e) {
+        } catch (Error const &e) {
             if (downstream) {
                 downstream->HandleError(e.message);
                 downstream.reset();
@@ -201,23 +196,15 @@ private:
         }
     }
 
-public:
+  public:
     LineClockPixellator(uint32_t pixelsPerLine, uint32_t linesPerFrame,
-        uint32_t maxFrames,
-        int32_t lineDelay, uint32_t lineTime, uint32_t lineMarkerBit,
-        std::shared_ptr<PixelPhotonProcessor> downstream) :
-        pixelsPerLine(pixelsPerLine),
-        linesPerFrame(linesPerFrame),
-        maxFrames(maxFrames),
-        lineDelay(lineDelay),
-        lineTime(lineTime),
-        lineMarkerMask(1 << lineMarkerBit),
-        latestTimestamp(0),
-        nextLine(0),
-        currentLine(0),
-        lineStartTime(-1),
-        downstream(downstream)
-    {
+                        uint32_t maxFrames, int32_t lineDelay,
+                        uint32_t lineTime, uint32_t lineMarkerBit,
+                        std::shared_ptr<PixelPhotonProcessor> downstream)
+        : pixelsPerLine(pixelsPerLine), linesPerFrame(linesPerFrame),
+          maxFrames(maxFrames), lineDelay(lineDelay), lineTime(lineTime),
+          lineMarkerMask(1 << lineMarkerBit), latestTimestamp(0), nextLine(0),
+          currentLine(0), lineStartTime(-1), downstream(downstream) {
         if (pixelsPerLine < 1) {
             throw std::invalid_argument("pixelsPerLine must be positive");
         }
@@ -229,7 +216,7 @@ public:
         }
     }
 
-    void HandleTimestamp(DecodedEvent const& event) override {
+    void HandleTimestamp(DecodedEvent const &event) override {
         auto prevTimestamp = latestTimestamp;
         UpdateTimeRange(event.macrotime);
         // We could call ProcessPhotonsAndLines() to emit all lines that are
@@ -245,16 +232,17 @@ public:
         }
     }
 
-    void HandleDataLost(DataLostEvent const& event) override {
+    void HandleDataLost(DataLostEvent const &event) override {
         UpdateTimeRange(event.macrotime);
         ProcessPhotonsAndLines();
         if (downstream) {
-            downstream->HandleError("Data lost due to device buffer (FIFO) overflow");
+            downstream->HandleError(
+                "Data lost due to device buffer (FIFO) overflow");
             downstream.reset();
         }
     }
 
-    void HandleValidPhoton(ValidPhotonEvent const& event) override {
+    void HandleValidPhoton(ValidPhotonEvent const &event) override {
         UpdateTimeRange(event.macrotime);
         EnqueuePhoton(event);
         // A small amount of buffering can improve performance (buffering
@@ -264,13 +252,13 @@ public:
         }
     }
 
-    void HandleInvalidPhoton(InvalidPhotonEvent const& event) override {
+    void HandleInvalidPhoton(InvalidPhotonEvent const &event) override {
         UpdateTimeRange(event.macrotime);
         // We could call ProcessPhotonsAndLines() to emit all lines that are
         // complete, but deferring can improve performance.
     }
 
-    void HandleMarker(MarkerEvent const& event) override {
+    void HandleMarker(MarkerEvent const &event) override {
         UpdateTimeRange(event.macrotime);
         if (event.bits & lineMarkerMask) {
             EnqueueLineMarker(event.macrotime);
@@ -281,7 +269,7 @@ public:
         }
     }
 
-    void HandleError(std::string const& message) override {
+    void HandleError(std::string const &message) override {
         ProcessPhotonsAndLines(); // Emit any buffered data
         if (downstream) {
             downstream->HandleError(message);
@@ -302,7 +290,5 @@ public:
     }
 
     // Emit all buffered data (for testing)
-    void Flush() {
-        ProcessPhotonsAndLines();
-    }
+    void Flush() { ProcessPhotonsAndLines(); }
 };

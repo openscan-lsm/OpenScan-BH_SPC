@@ -1,6 +1,5 @@
-#include <catch2/catch.hpp>
 #include "FLIMEvents/BHDeviceEvent.hpp"
-
+#include <catch2/catch.hpp>
 
 TEST_CASE("ADCValue", "[BHSPCEvent]") {
     union {
@@ -25,7 +24,6 @@ TEST_CASE("ADCValue", "[BHSPCEvent]") {
     u.bytes[3] = 0xf0;
     REQUIRE(u.event.GetADCValue() == 0);
 }
-
 
 TEST_CASE("RoutingSignals", "[BHSPCEvent]") {
     union {
@@ -56,7 +54,6 @@ TEST_CASE("RoutingSignals", "[BHSPCEvent]") {
     REQUIRE(u.event.GetMarkerBits() == 0);
 }
 
-
 TEST_CASE("MacroTime", "[BHSPCEvent]") {
     REQUIRE(BHSPCEvent::MacroTimeOverflowPeriod == 4096);
 
@@ -83,7 +80,6 @@ TEST_CASE("MacroTime", "[BHSPCEvent]") {
     REQUIRE(u.event.GetMacroTime() == 0);
 }
 
-
 TEST_CASE("Flags", "[BHSPCEvent]") {
     union {
         BHSPCEvent event;
@@ -105,7 +101,6 @@ TEST_CASE("Flags", "[BHSPCEvent]") {
     u.bytes[3] = 1 << 4;
     REQUIRE(u.event.GetMarkerFlag());
 }
-
 
 TEST_CASE("MacroTimeOverflow", "[BHSPCEvent]") {
     union {
@@ -138,7 +133,6 @@ TEST_CASE("MacroTimeOverflow", "[BHSPCEvent]") {
     u.bytes[3] = INVALID | MTOV | MARK; // Marker, single overflow
     REQUIRE(!u.event.IsMultipleMacroTimeOverflow());
 }
-
 
 TEST_CASE("MacroTimeOverflowCount", "[BHSPCEvent]") {
     union {

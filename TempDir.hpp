@@ -6,49 +6,46 @@
 
 #include <string>
 
-
 class TempDir final {
-	std::string path;
+    std::string path;
 
-public:
-	TempDir() {
-		char tempPath[MAX_PATH];
-		DWORD len = GetTempPathA(sizeof(tempPath), tempPath);
-		if (len == 0 || len > MAX_PATH)
-			return;
+  public:
+    TempDir() {
+        char tempPath[MAX_PATH];
+        DWORD len = GetTempPathA(sizeof(tempPath), tempPath);
+        if (len == 0 || len > MAX_PATH)
+            return;
 
-		char buf[MAX_PATH];
-		UINT n = GetTempFileNameA(tempPath, "spc", 0, buf);
-		if (n == 0)
-			return;
+        char buf[MAX_PATH];
+        UINT n = GetTempFileNameA(tempPath, "spc", 0, buf);
+        if (n == 0)
+            return;
 
-		// Delete the file created by GetTempFileName(). This is not race-free,
-		// but good enough for our purpose.
-		BOOL ok = DeleteFileA(buf);
-		if (!ok)
-			return;
+        // Delete the file created by GetTempFileName(). This is not race-free,
+        // but good enough for our purpose.
+        BOOL ok = DeleteFileA(buf);
+        if (!ok)
+            return;
 
-		ok = CreateDirectoryA(buf, NULL);
-		if (!ok)
-			return;
+        ok = CreateDirectoryA(buf, NULL);
+        if (!ok)
+            return;
 
-		path = buf;
-	}
+        path = buf;
+    }
 
-	~TempDir() {
-		if (path.empty())
-			return;
+    ~TempDir() {
+        if (path.empty())
+            return;
 
-		SHFILEOPSTRUCTA deleteOp;
-		memset(&deleteOp, 0, sizeof(deleteOp));
-		deleteOp.wFunc = FO_DELETE;
-		path += '\0'; // Double-null required
-		deleteOp.pFrom = path.c_str();
-		deleteOp.fFlags = FOF_NO_UI;
-		SHFileOperationA(&deleteOp);
-	}
+        SHFILEOPSTRUCTA deleteOp;
+        memset(&deleteOp, 0, sizeof(deleteOp));
+        deleteOp.wFunc = FO_DELETE;
+        path += '\0'; // Double-null required
+        deleteOp.pFrom = path.c_str();
+        deleteOp.fFlags = FOF_NO_UI;
+        SHFileOperationA(&deleteOp);
+    }
 
-	std::string GetPath() {
-		return path;
-	}
+    std::string GetPath() { return path; }
 };

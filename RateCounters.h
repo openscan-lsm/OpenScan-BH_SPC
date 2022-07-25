@@ -2,12 +2,12 @@
 
 #include "BH_SPC150Private.h"
 
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-struct RateCounts *StartRateCounterMonitor(short module, float intervalSeconds);
+struct RateCounts *StartRateCounterMonitor(short module,
+                                           float intervalSeconds);
 void StopRateCounterMonitor(struct RateCounts *data);
 
 // 'values' is float[4]

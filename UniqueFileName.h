@@ -6,7 +6,8 @@
 extern "C" {
 #endif
 
-const char* UniqueFileName(const char* prefix, const char* const* extensions, size_t ext_size, char* result, size_t result_size);
+const char *UniqueFileName(const char *prefix, const char *const *extensions,
+                           size_t ext_size, char *result, size_t result_size);
 
 #ifdef __cplusplus
 }
