@@ -74,15 +74,15 @@ openscandevicelib_dep = dependency(
 )
 
 src = files(
-    'AcquisitionControl.cpp',
-    'BH_SPC150.c',
-    'BH_SPC150Settings.c',
-    'DataStream.cpp',
-    'FIFOAcquisition.cpp',
-    'RateCounters.cpp',
-    'SDTFile.c',
-    'UniqueFileName.c',
-    'ZipCompress.c',
+    'src/AcquisitionControl.cpp',
+    'src/BH_SPC150.c',
+    'src/BH_SPC150Settings.c',
+    'src/DataStream.cpp',
+    'src/FIFOAcquisition.cpp',
+    'src/RateCounters.cpp',
+    'src/SDTFile/SDTFile.c',
+    'src/SDTFile/ZipCompress.c',
+    'src/UniqueFileName.c',
 )
 
 osdev = shared_module(
@@ -97,6 +97,11 @@ osdev = shared_module(
     ],
     cpp_args: [
         '-D_CRT_SECURE_NO_WARNINGS',
+    ],
+    include_directories: [
+        include_directories('src'),
+        include_directories('src/SDTFile'),
+        include_directories('src/Sender'),
     ],
     dependencies: [
         bh_spcm_dep,
