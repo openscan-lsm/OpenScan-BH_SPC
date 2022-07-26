@@ -1,0 +1,6 @@
+*
+!/.gitignore
+!/FLIMEvents/
+!/OpenScanLib.wrap
+!/libzip
+!/libzip/**
