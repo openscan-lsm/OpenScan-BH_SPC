@@ -5,5 +5,8 @@ dumpspc_srcs = [
 dumpspc_exe = executable(
     'DumpSPC',
     dumpspc_srcs,
-    include_directories: public_inc,
+    include_directories: [
+        public_inc,
+        example_inc,
+    ],
 )

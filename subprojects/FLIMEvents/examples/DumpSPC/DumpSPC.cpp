@@ -1,4 +1,4 @@
-#include "../BHSPCFile.hpp"
+#include "BHSPCFile.hpp"
 #include "FLIMEvents/BHDeviceEvent.hpp"
 
 #include <fstream>
