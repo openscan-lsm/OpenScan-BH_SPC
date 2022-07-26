@@ -68,6 +68,8 @@ openscandevicelib_dep = dependency(
     fallback: ['OpenScanLib', 'OpenScanDeviceLib'],
     static: true,
     default_options: [
+        'devicelib=enabled',
+        'apilib=disabled',
         'docs=disabled',
         'tests=disabled',
     ],
