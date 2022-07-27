@@ -55,6 +55,11 @@ libzip_dep = dependency(
     static: true,
 )
 
+rapidjson_dep = dependency(
+    'rapidjson',
+    fallback: ['rapidjson', 'rapidjson_dep'],
+)
+
 shlwapi_dep = cc.find_library('shlwapi')
 ws2_32_dep = cc.find_library('Ws2_32')
 
@@ -62,6 +67,8 @@ flimevents_dep = dependency(
     'FLIMEvents',
     fallback: 'FLIMEvents',
 )
+
+flimevents_example_inc = subproject('FLIMEvents').get_variable('example_inc')
 
 openscandevicelib_dep = dependency(
     'OpenScanDeviceLib',
@@ -95,9 +102,11 @@ osdev = shared_module(
     ],
     name_suffix: 'osdev',
     c_args: [
+        '-DNOMINMAX',
         '-D_CRT_SECURE_NO_WARNINGS',
     ],
     cpp_args: [
+        '-DNOMINMAX',
         '-D_CRT_SECURE_NO_WARNINGS',
     ],
     include_directories: [
@@ -108,9 +117,31 @@ osdev = shared_module(
     dependencies: [
         bh_spcm_dep,
         libzip_dep,
+        rapidjson_dep,
         shlwapi_dep,
         ws2_32_dep,
         flimevents_dep,
         openscandevicelib_dep,
+    ],
+)
+
+replay = executable(
+    'ReplaySPC',
+    [
+        'src/Replay/Replay.cpp',
+    ],
+    cpp_args: [
+        '-DNOMINMAX',
+        '-D_CRT_SECURE_NO_WARNINGS',
+    ],
+    include_directories: [
+        include_directories('src'),
+        include_directories('src/Sender'),
+        flimevents_example_inc,
+    ],
+    dependencies: [
+        rapidjson_dep,
+        flimevents_dep,
+        ws2_32_dep,
     ],
 )

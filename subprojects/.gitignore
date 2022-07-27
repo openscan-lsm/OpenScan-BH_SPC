@@ -4,3 +4,4 @@
 !/OpenScanLib.wrap
 !/libzip
 !/libzip/**
+!/rapidjson.wrap

@@ -4,6 +4,7 @@
 #include "DataSender.hpp"
 #include "DataStream.hpp"
 #include "FIFOAcquisition.hpp"
+#include "MetadataJson.hpp"
 #include "SPCFileWriter.hpp"
 #include "UniqueFileName.h"
 
@@ -234,9 +235,9 @@ extern "C" int StartAcquisition(OScDev_Device *device,
     std::shared_ptr<DataSender> dataSender;
 
     if (!fileNamePrefix.empty()) {
-        const char *const extensions[] = {".spc", ".sdt"};
+        const char *const extensions[] = {".spc", ".sdt", ".json"};
         char temp[512];
-        if (UniqueFileName(fileNamePrefix.c_str(), extensions, 2, temp,
+        if (UniqueFileName(fileNamePrefix.c_str(), extensions, 3, temp,
                            sizeof(temp))) {
             std::string uniquePrefix = temp;
 
@@ -252,6 +253,18 @@ extern "C" int StartAcquisition(OScDev_Device *device,
                 GetData(device)->pixelMarkerBit < NUM_MARKER_BITS,
                 GetData(device)->lineMarkerBit < NUM_MARKER_BITS,
                 GetData(device)->frameMarkerBit < NUM_MARKER_BITS);
+
+            MetadataJsonWriter jsonWriter(uniquePrefix + ".json");
+            jsonWriter.SetChannelMask(channelMask);
+            jsonWriter.SetImageSize(width, height);
+            jsonWriter.SetPixelRateHz(pixelRateHz);
+            jsonWriter.SetMacrotimeUnitsTenthNs(macroTimeUnitsTenthNs);
+            jsonWriter.SetLineDelayAndTime(lineDelay, lineTime);
+            jsonWriter.SetMarkerSettings(false, NUM_MARKER_BITS,
+                                         GetData(device)->pixelMarkerBit,
+                                         GetData(device)->lineMarkerBit,
+                                         GetData(device)->frameMarkerBit);
+            jsonWriter.Save();
         }
     }
 
