@@ -3,7 +3,7 @@
 #include <rapidjson/document.h>
 #include <rapidjson/filereadstream.h>
 #include <rapidjson/filewritestream.h>
-#include <rapidjson/writer.h>
+#include <rapidjson/prettywriter.h>
 
 #include <bitset>
 #include <cstdio>
@@ -14,13 +14,13 @@ namespace rj = rapidjson;
 class MetadataJsonWriter final {
     std::string const filename;
     rj::Document doc;
-    rj::Value obj;
 
   public:
     MetadataJsonWriter(std::string const &filename)
-        : filename(filename), obj(rj::kObjectType) {
-        obj.AddMember("version", 0, doc.GetAllocator());
-        obj.AddMember(
+        : filename(filename) {
+        doc.SetObject();
+        doc.AddMember("version", 0, doc.GetAllocator());
+        doc.AddMember(
             "comment",
             "This file contains Becker-Hickl TCSPC-FLIM acquisition settings for the corresponding .spc file",
             doc.GetAllocator());
@@ -31,7 +31,7 @@ class MetadataJsonWriter final {
         if (fp) {
             char buf[65535];
             rj::FileWriteStream stream(fp, buf, sizeof(buf));
-            rj::Writer<rj::FileWriteStream> writer(stream);
+            rj::PrettyWriter<rj::FileWriteStream> writer(stream);
             doc.Accept(writer);
             fclose(fp);
         }
@@ -43,42 +43,42 @@ class MetadataJsonWriter final {
         for (size_t i = 0; i < mask.size(); ++i) {
             array.PushBack(mask[i], allocator);
         }
-        obj.AddMember("enabled_channels", array, doc.GetAllocator());
+        doc.AddMember("enabled_channels", array, doc.GetAllocator());
     }
 
     void SetImageSize(uint32_t width, uint32_t height) {
-        obj.AddMember("raster_width", width, doc.GetAllocator());
-        obj.AddMember("raster_height", height, doc.GetAllocator());
+        doc.AddMember("raster_width", width, doc.GetAllocator());
+        doc.AddMember("raster_height", height, doc.GetAllocator());
     }
 
     void SetPixelRateHz(double pixelRateHz) {
-        obj.AddMember("pixel_rate_hz", pixelRateHz, doc.GetAllocator());
+        doc.AddMember("pixel_rate_hz", pixelRateHz, doc.GetAllocator());
     }
 
     void SetMacrotimeUnitsTenthNs(int macroTimeUnitsTenthNs) {
-        obj.AddMember("macrotime_units_1_10_ns", macroTimeUnitsTenthNs,
+        doc.AddMember("macrotime_units_1_10_ns", macroTimeUnitsTenthNs,
                       doc.GetAllocator());
     }
 
     void SetLineDelayAndTime(int32_t delay, uint32_t time) {
-        obj.AddMember("line_delay_macrotime_units", delay, doc.GetAllocator());
-        obj.AddMember("line_time_macrotime_units", time, doc.GetAllocator());
+        doc.AddMember("line_delay_macrotime_units", delay, doc.GetAllocator());
+        doc.AddMember("line_time_macrotime_units", time, doc.GetAllocator());
     }
 
     void SetMarkerSettings(bool usePixelClock, uint32_t nMarkerBits,
                            uint32_t pixelMarkerBit, uint32_t lineMarkerBit,
                            uint32_t frameMarkerBit) {
         if (usePixelClock)
-            obj.AddMember("use_pixel_clock", usePixelClock,
+            doc.AddMember("use_pixel_clock", usePixelClock,
                           doc.GetAllocator());
         if (pixelMarkerBit < nMarkerBits)
-            obj.AddMember("pixel_marker_bit", pixelMarkerBit,
+            doc.AddMember("pixel_marker_bit", pixelMarkerBit,
                           doc.GetAllocator());
         if (lineMarkerBit < nMarkerBits)
-            obj.AddMember("line_marker_bit", lineMarkerBit,
+            doc.AddMember("line_marker_bit", lineMarkerBit,
                           doc.GetAllocator());
         if (frameMarkerBit < nMarkerBits)
-            obj.AddMember("frame_marker_bit", frameMarkerBit,
+            doc.AddMember("frame_marker_bit", frameMarkerBit,
                           doc.GetAllocator());
     }
 };
