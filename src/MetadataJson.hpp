@@ -3,7 +3,7 @@
 #include <rapidjson/document.h>
 #include <rapidjson/filereadstream.h>
 #include <rapidjson/filewritestream.h>
-#include <rapidjson/writer.h>
+#include <rapidjson/prettywriter.h>
 
 #include <bitset>
 #include <cstdio>
@@ -31,7 +31,7 @@ class MetadataJsonWriter final {
         if (fp) {
             char buf[65535];
             rj::FileWriteStream stream(fp, buf, sizeof(buf));
-            rj::Writer<rj::FileWriteStream> writer(stream);
+            rj::PrettyWriter<rj::FileWriteStream> writer(stream);
             doc.Accept(writer);
             fclose(fp);
         }
