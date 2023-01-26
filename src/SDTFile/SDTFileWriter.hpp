@@ -101,9 +101,11 @@ class SDTWriter final : public std::enable_shared_from_this<SDTWriter> {
             return;
         }
 
+        short fifoType, streamType; // Unused
+        unsigned int spcHeader; // Unused
         int macroTimeUnitsTenthNs;
-        err = SPC_get_fifo_init_vars(module, nullptr, nullptr,
-                                     &macroTimeUnitsTenthNs, nullptr);
+        err = SPC_get_fifo_init_vars(module, &fifoType, &streamType,
+                                     &macroTimeUnitsTenthNs, &spcHeader);
         if (err < 0) {
             SendError("Cannot get FIFO init vars for SDT file");
             return;

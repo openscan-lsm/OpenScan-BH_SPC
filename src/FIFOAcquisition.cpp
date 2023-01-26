@@ -35,6 +35,9 @@ int ConfigureDeviceForFIFOAcquisition(short module) {
     case M_SPC152:
     case M_SPC160:
     case M_SPC161:
+    case M_SPC180:
+    case M_SPC181:
+    case M_SPC182:
     case M_SPC830:
     case M_SPC930:
         mode = 1;
@@ -145,7 +148,7 @@ bool IsStandardFIFO(short fifoType) {
     case FIFO_130:
     case FIFO_830:
     case FIFO_140:
-    case FIFO_150:
+    case FIFO_150: // 15x, 131-7, 16x, 18x
         return true;
     }
     return false;

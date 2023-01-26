@@ -433,6 +433,14 @@ static unsigned short ModuleTypeToHeaderBits(const char *type) {
         return 0x81;
     if (strcmp(type, "SPC-160PCIE") == 0)
         return 0x82;
+    if (strcmp(type, "SPC-130EMN") == 0)
+        return 0x83;
+    if (strcmp(type, "SPC-180N") == 0)
+        return 0x84;
+    if (strcmp(type, "SPC-180NX") == 0)
+        return 0x85;
+    if (strcmp(type, "SPC-180NXX") == 0)
+        return 0x86;
     return 0;
 }
 
