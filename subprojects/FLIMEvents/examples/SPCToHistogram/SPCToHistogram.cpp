@@ -16,7 +16,29 @@ void Usage() {
         << "Test driver for histogramming.\n"
         << "Usage: SPCToHistogram <width> <height> <lineDelay> <lineTime> input.spc output.raw\n"
         << "where <lineDelay> and <lineTime> are in macro-time units.\n"
-        << "Currently the output contains only the raw cumulative histogram.\n";
+        << "Currently the output contains only the raw cumulative histogram.\n"
+        << "Additional numbered files are written, containing the cumulative histogram up to each frame.";
+}
+
+std::string MakeFrameFileName(std::string const &name, std::size_t frameNo) {
+    // TODO To do this properly, use std::filesystem so that it won't find a
+    // '.' in a directory name.
+    auto dot_pos = name.find_last_of('.');
+    std::string base, ext;
+    if (dot_pos == std::string::npos) {
+        base = name;
+    } else {
+        base = name.substr(0, dot_pos);
+        ext = name.substr(dot_pos);
+    }
+
+    constexpr std::size_t digits = 4;
+    std::string strNo = std::to_string(frameNo);
+    std::string formattedNo(strNo.size() > digits ? 0 : digits - strNo.size(),
+                            '0');
+    formattedNo += strNo;
+
+    return base + '_' + formattedNo + ext;
 }
 
 template <typename T> class HistogramSaver : public HistogramProcessor<T> {
@@ -33,6 +55,18 @@ template <typename T> class HistogramSaver : public HistogramProcessor<T> {
     }
 
     void HandleFrame(Histogram<T> const &histogram) override {
+        std::string frameOutFileName =
+            MakeFrameFileName(outFilename, frameCount);
+        std::fstream output(frameOutFileName,
+                            std::fstream::binary | std::fstream::out);
+        if (!output.is_open()) {
+            std::cerr << "Cannot open " << frameOutFileName << '\n';
+            std::exit(1);
+        }
+
+        output.write(reinterpret_cast<const char *>(histogram.Get()),
+                     histogram.GetNumberOfElements() * sizeof(T));
+
         std::cerr << "Frame " << (frameCount++) << '\n';
     }
 
