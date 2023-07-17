@@ -179,10 +179,10 @@ template <typename E> class BHEventDecoder : public DeviceEventDecoder {
 
         uint64_t macrotime = macrotimeBase + devEvt->GetMacroTime();
 
-        // Validate input: ensure macrotime increases monotonically (a common
+        // Validate input: ensure macrotime is non-decreasing (a common
         // assumption made by downstream processors)
-        if (macrotime <= lastMacrotime) {
-            SendError("Non-monotonic macro-time encountered");
+        if (macrotime < lastMacrotime) {
+            SendError("Decreasing macro-time encountered");
             return;
         }
         lastMacrotime = macrotime;
