@@ -1,7 +1,13 @@
-*
-!/.gitignore
-!/FLIMEvents/
+/packagecache/
+
+# Subprojects with version numbers (downloaded via wrap)
+/*-*/
+
+# Other subprojects
+/OpenScanLib/
+
+# List of our .wrap files (because we do want to ignore any transitive
+# dependency wraps)
+/*.wrap
 !/OpenScanLib.wrap
-!/libzip
-!/libzip/**
 !/rapidjson.wrap

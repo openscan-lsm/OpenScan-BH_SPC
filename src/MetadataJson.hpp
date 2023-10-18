@@ -16,8 +16,7 @@ class MetadataJsonWriter final {
     rj::Document doc;
 
   public:
-    MetadataJsonWriter(std::string const &filename)
-        : filename(filename) {
+    MetadataJsonWriter(std::string const &filename) : filename(filename) {
         doc.SetObject();
         doc.AddMember("version", 0, doc.GetAllocator());
         doc.AddMember(

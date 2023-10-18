@@ -102,7 +102,7 @@ class SDTWriter final : public std::enable_shared_from_this<SDTWriter> {
         }
 
         short fifoType, streamType; // Unused
-        unsigned int spcHeader; // Unused
+        unsigned int spcHeader;     // Unused
         int macroTimeUnitsTenthNs;
         err = SPC_get_fifo_init_vars(module, &fifoType, &streamType,
                                      &macroTimeUnitsTenthNs, &spcHeader);
