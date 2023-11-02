@@ -53,6 +53,7 @@ struct BH_PrivateData {
     enum PixelMappingMode pixelMappingMode;
     double lineDelayPx; // Delay of photons relative to markers
 
+    bool saveFiles;
     char fileNamePrefix[OScDev_MAX_STR_SIZE];
 
     bool compressHistograms;

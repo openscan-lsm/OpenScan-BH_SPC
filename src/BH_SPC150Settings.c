@@ -350,6 +350,21 @@ static OScDev_SettingImpl SettingImpl_CheckSync = {
     .SetBool = SetCheckSync,
 };
 
+static OScDev_Error GetSaveFiles(OScDev_Setting *setting, bool *value) {
+    *value = GetSettingDeviceData(setting)->saveFiles;
+    return OScDev_OK;
+}
+
+static OScDev_Error SetSaveFiles(OScDev_Setting *setting, bool value) {
+    GetSettingDeviceData(setting)->saveFiles = value;
+    return OScDev_OK;
+}
+
+static OScDev_SettingImpl SettingImpl_SaveFiles = {
+    .GetBool = GetSaveFiles,
+    .SetBool = SetSaveFiles,
+};
+
 static OScDev_Error GetFileNamePrefix(OScDev_Setting *setting, char *value) {
     strcpy(value, GetSettingDeviceData(setting)->fileNamePrefix);
     return OScDev_OK;
@@ -511,6 +526,14 @@ OScDev_Error BH_MakeSettings(OScDev_Device *device,
                               device)))
         goto error;
     OScDev_PtrArray_Append(*settings, checkSync);
+
+    OScDev_Setting *saveFiles;
+    if (OScDev_CHECK(err,
+                     OScDev_Setting_Create(&saveFiles, "FLIMFileSaving",
+                                           OScDev_ValueType_Bool,
+                                           &SettingImpl_SaveFiles, device)))
+        goto error;
+    OScDev_PtrArray_Append(*settings, saveFiles);
 
     OScDev_Setting *fileNamePrefix;
     if (OScDev_CHECK(

@@ -195,7 +195,8 @@ extern "C" int StartAcquisition(OScDev_Device *device,
         return 1; // Unimplemented mode
     }
     double lineDelayPixels = GetData(device)->lineDelayPx;
-    std::string fileNamePrefix(GetData(device)->fileNamePrefix);
+    std::string fileNamePrefix(
+        GetData(device)->saveFiles ? GetData(device)->fileNamePrefix : "");
     bool compressHistograms = GetData(device)->compressHistograms;
     uint16_t senderPort = GetData(device)->senderPort;
     bool checkSync = GetData(device)->checkSyncBeforeAcq;
