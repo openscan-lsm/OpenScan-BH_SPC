@@ -17,11 +17,11 @@ class LineClockPixellator : public DecodedEventProcessor {
     uint32_t const lineTime; // in macro-time units
     decltype(MarkerEvent::bits) const lineMarkerMask;
 
-    uint64_t latestTimestamp; // Latest observed macro-time
+    uint64_t latestTimestamp = 0; // Latest observed macro-time
 
     // Cumulative line numbers (no reset on new frame)
-    uint64_t nextLine;    // Incremented on line startTime
-    uint64_t currentLine; // Incremented on line finish
+    uint64_t nextLine = 0;    // Incremented on line startTime
+    uint64_t currentLine = 0; // Incremented on line finish
     // "Line startTime" is reception of line marker, at which point the line
     // startTime and finish macro-times are determined. "Line finish" is when
     // we determine that all photons for the line have been emitted downstream.
@@ -29,7 +29,7 @@ class LineClockPixellator : public DecodedEventProcessor {
     // If nextLine == currentLine, we are between (nextLine - 1) and nextLine.
 
     // Start time of current line, or -1 if no line started.
-    uint64_t lineStartTime;
+    uint64_t lineStartTime = -1;
 
     // Buffer received photons until we can assign to pixel
     std::deque<ValidPhotonEvent> pendingPhotons;
@@ -203,8 +203,7 @@ class LineClockPixellator : public DecodedEventProcessor {
                         std::shared_ptr<PixelPhotonProcessor> downstream)
         : pixelsPerLine(pixelsPerLine), linesPerFrame(linesPerFrame),
           maxFrames(maxFrames), lineDelay(lineDelay), lineTime(lineTime),
-          lineMarkerMask(1 << lineMarkerBit), latestTimestamp(0), nextLine(0),
-          currentLine(0), lineStartTime(-1), downstream(downstream) {
+          lineMarkerMask(1 << lineMarkerBit), downstream(downstream) {
         if (pixelsPerLine < 1) {
             throw std::invalid_argument("pixelsPerLine must be positive");
         }
