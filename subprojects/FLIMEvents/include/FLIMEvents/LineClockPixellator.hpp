@@ -30,6 +30,7 @@ class LineClockPixellator : public DecodedEventProcessor {
 
     // Start time of current line, or -1 if no line started.
     uint64_t lineStartTime = -1;
+    uint64_t lastLineStartTime = 0;
 
     // Buffer received photons until we can assign to pixel
     std::deque<ValidPhotonEvent> pendingPhotons;
@@ -80,6 +81,7 @@ class LineClockPixellator : public DecodedEventProcessor {
 
     void StartLine(uint64_t lineMarkerTime) {
         lineStartTime = CheckLineStart(lineMarkerTime);
+        lastLineStartTime = lineStartTime;
         ++nextLine;
 
         bool newFrame = currentLine % linesPerFrame == 0;
@@ -188,6 +190,12 @@ class LineClockPixellator : public DecodedEventProcessor {
         try {
             while (ProcessLinePhotons())
                 ;
+            // Give up if we don't see any lines in a very long time
+            // (for now, 10/20 s for 25/50 ns macrotime period).
+            if (latestTimestamp > lastLineStartTime + 400'000'000uLL) {
+                throw Error(
+                    "More than 400M macrotime units since last line start");
+            }
         } catch (Error const &e) {
             if (downstream) {
                 downstream->HandleError(e.message);
