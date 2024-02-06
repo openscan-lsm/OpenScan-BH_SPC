@@ -8,7 +8,7 @@ Only x64 builds are curretnly supported.
   [Meson](https://github.com/mesonbuild/meson/releases), and
   [CMake](https://cmake.org/download/). Make sure `meson`, `ninja`, and `cmake`
   are on the `PATH`.
-- Install Becher-Hickl's
+- Install Becker-Hickl's
   [TCSPC Package](https://www.becker-hickl.com/products/tcspc-package/#product-download)
   (make sure SPCM and SPCM-DLL are selected).
 - In Git Bash, clone vcpkg (if you do not already have it) and this repo:
@@ -20,12 +20,13 @@ git clone https://github.com/openscan-lsm/OpenScan-BHSPC.git
 
 (Currently, vcpkg is used to obtain libzip conveniently.)
 
-- Bootstrap vcpkg (if you have not done so yet). This should be done in
-  PowerShell or Command Prompt, not Git Bash:
+- Bootstrap vcpkg (if you have not done so yet) and install libzip. This should
+  be done in PowerShell or Command Prompt, not Git Bash:
 
 ```pwsh
 cd path\to\vcpkg
 .\bootstrap-vcpkg -disableMetrics
+.\vcpkg install libzip --triplet=x64-windows-static
 ```
 
 - Build OpenScan-BHSPC. This is best done in the Developer PowerShell for VS
