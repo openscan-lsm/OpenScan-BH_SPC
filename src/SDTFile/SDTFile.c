@@ -50,7 +50,7 @@ static int WriteSDTIdentification(FILE *fp, const struct SDTFileData *data) {
         // consider removing.
         snprintf(
             buf, bufSize,
-            "*IDENTIFICAION" NEWLINE "  ID        : %s" NEWLINE
+            "*IDENTIFICATION" NEWLINE "  ID        : %s" NEWLINE
             "  Title     : OpenScan FLIM Image" NEWLINE
             "  Version   : 3  980 M" NEWLINE
             "  Revision  : %u bits ADC" NEWLINE "  Date      : %s" NEWLINE
