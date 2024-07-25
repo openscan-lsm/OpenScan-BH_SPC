@@ -35,7 +35,7 @@ cd path\to\vcpkg
 
 ```pwsh
 cd path\to\OpenScan-BHSPC
-meson setup builddir -Dvcpkgdir=C:\full\path\to\vcpkg -Db_vscrt=mt --buildtype release
+meson setup builddir -Dvcpkgdir=C:\full\path\to\vcpkg -Db_vscrt=static_from_buildtype --buildtype release
 meson compile -C builddir
 ```
 
