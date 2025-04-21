@@ -33,9 +33,19 @@ cd path\to\vcpkg
   2019 (or later), which can be started from the Start Menu (hint: type
   'developer powershell' into the Start Menu to search).
 
+Release build (optimized, no debug info):
+
 ```pwsh
 cd path\to\OpenScan-BHSPC
-meson setup builddir -Dvcpkgdir=C:\full\path\to\vcpkg -Db_vscrt=static_from_buildtype --buildtype release
+meson setup builddir -Dvcpkgdir=C:\full\path\to\vcpkg -Db_vscrt=mt --buildtype release
+meson compile -C builddir
+```
+
+Debug build (unoptimized, with debug info):
+
+```pwsh
+cd path\to\OpenScan-BHSPC
+meson setup builddir -Dvcpkgdir=C:\full\path\to\vcpkg -Db_vscrt=mtd --buildtype debug
 meson compile -C builddir
 ```
 
