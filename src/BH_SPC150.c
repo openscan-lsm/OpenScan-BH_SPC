@@ -15,6 +15,24 @@ static size_t g_openDeviceCount = 0;
 // Forward declaration
 static OScDev_DeviceImpl BH_TCSPC_Device_Impl;
 
+static bool FileExists(const char *name) {
+    FILE *f = fopen(name, "r");
+    if (f != NULL) {
+        fclose(f);
+        return true;
+    }
+    return false;
+}
+
+static size_t IndexOfFirstFileThatExists(const char **candidates) {
+    for (size_t i = 0; candidates[i] != NULL; ++i) {
+        if (FileExists(candidates[i])) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 static void PopulateDefaultParameters(struct BH_PrivateData *data) {
     memset(data, 0, sizeof(struct BH_PrivateData));
 
@@ -47,7 +65,22 @@ static OScDev_Error EnsureFLIMBoardInitialized(void) {
         return OScDev_Error_Device_Already_Open;
     }
 
-    char iniFileName[] = "sspcm.ini";
+    const char *iniFileCandidates[] = {
+        "spcm.ini",
+        "sspcm.ini", // For compatibility with earlier versions of this module
+        NULL,
+    };
+    size_t iniFileIndex = IndexOfFirstFileThatExists(iniFileCandidates);
+    if (iniFileIndex < 0) {
+        OScDev_Log_Error(NULL, "Cannot find the SPCM .ini file");
+        return OScDev_Error_Unknown; // TODO
+    }
+
+    // SPC_init() wants non-const string, so make a copy.
+    char iniFileName[1024];
+    snprintf(iniFileName, sizeof(iniFileName), "%s",
+             iniFileCandidates[iniFileIndex]);
+
     short spcErr = SPC_init(iniFileName);
     if (spcErr < 0) {
         char msg[OScDev_MAX_STR_LEN + 1] = "Cannot initialize BH SPC using ";
