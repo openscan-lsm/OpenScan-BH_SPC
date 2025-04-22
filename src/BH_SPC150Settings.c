@@ -438,7 +438,7 @@ static OScDev_SettingImpl SettingImpl_RateCounter = {
 
 OScDev_Error BH_MakeSettings(OScDev_Device *device,
                              OScDev_PtrArray **settings) {
-    OScDev_Error err = OScDev_OK;
+    OScDev_RichError *err = OScDev_RichError_OK;
     *settings = OScDev_PtrArray_Create();
 
     for (int i = 0; i < MAX_NUM_CHANNELS; ++i) {
@@ -449,19 +449,22 @@ OScDev_Error BH_MakeSettings(OScDev_Device *device,
         char name[64];
         snprintf(name, sizeof(name), "EnableChannel%d", i);
         OScDev_Setting *enableChannel;
-        if (OScDev_CHECK(err, OScDev_Setting_Create(
-                                  &enableChannel, name, OScDev_ValueType_Bool,
-                                  &SettingImpl_EnableChannel, data)))
+        err = OScDev_Error_AsRichError(
+            OScDev_Setting_Create(&enableChannel, name, OScDev_ValueType_Bool,
+                                  &SettingImpl_EnableChannel, data));
+        if (err) {
+            free(data);
             goto error;
+        }
         OScDev_PtrArray_Append(*settings, enableChannel);
     }
 
     OScDev_Setting *accumulateIntensity;
-    if (OScDev_CHECK(err,
-                     OScDev_Setting_Create(
-                         &accumulateIntensity, "IntensityImagesAreCumulative",
-                         OScDev_ValueType_Bool,
-                         &SettingImpl_IntensityImagesCumulative, device)))
+    err = OScDev_Error_AsRichError(OScDev_Setting_Create(
+        &accumulateIntensity, "IntensityImagesAreCumulative",
+        OScDev_ValueType_Bool, &SettingImpl_IntensityImagesCumulative,
+        device));
+    if (err)
         goto error;
     OScDev_PtrArray_Append(*settings, accumulateIntensity);
 
@@ -473,10 +476,10 @@ OScDev_Error BH_MakeSettings(OScDev_Device *device,
         char name[64];
         snprintf(name, sizeof(name), "Marker%dActiveEdge", i);
         OScDev_Setting *markerActiveEdge;
-        if (OScDev_CHECK(err,
-                         OScDev_Setting_Create(
-                             &markerActiveEdge, name, OScDev_ValueType_Enum,
-                             &SettingImpl_MarkerActiveEdge, data))) {
+        err = OScDev_Error_AsRichError(OScDev_Setting_Create(
+            &markerActiveEdge, name, OScDev_ValueType_Enum,
+            &SettingImpl_MarkerActiveEdge, data));
+        if (err) {
             free(data);
             goto error;
         }
@@ -493,10 +496,10 @@ OScDev_Error BH_MakeSettings(OScDev_Device *device,
         data->device = device;
         data->markerType = scanMarkerTypes[i];
         OScDev_Setting *markerAssignment;
-        if (OScDev_CHECK(err, OScDev_Setting_Create(
-                                  &markerAssignment, scanMarkers[i],
-                                  OScDev_ValueType_Enum,
-                                  &SettingImpl_ScanMarkerAssignment, data))) {
+        err = OScDev_Error_AsRichError(OScDev_Setting_Create(
+            &markerAssignment, scanMarkers[i], OScDev_ValueType_Enum,
+            &SettingImpl_ScanMarkerAssignment, data));
+        if (err) {
             free(data);
             goto error;
         }
@@ -504,58 +507,58 @@ OScDev_Error BH_MakeSettings(OScDev_Device *device,
     }
 
     OScDev_Setting *pixelMappingMode;
-    if (OScDev_CHECK(
-            err, OScDev_Setting_Create(&pixelMappingMode, "PixelMappingMode",
-                                       OScDev_ValueType_Enum,
-                                       &SettingImpl_PixelMappingMode, device)))
+    err = OScDev_Error_AsRichError(OScDev_Setting_Create(
+        &pixelMappingMode, "PixelMappingMode", OScDev_ValueType_Enum,
+        &SettingImpl_PixelMappingMode, device));
+    if (err)
         goto error;
     OScDev_PtrArray_Append(*settings, pixelMappingMode);
 
     OScDev_Setting *lineDelayPx;
-    if (OScDev_CHECK(err,
-                     OScDev_Setting_Create(&lineDelayPx, "LineDelay_px",
-                                           OScDev_ValueType_Float64,
-                                           &SettingImpl_LineDelayPx, device)))
+    err = OScDev_Error_AsRichError(OScDev_Setting_Create(
+        &lineDelayPx, "LineDelay_px", OScDev_ValueType_Float64,
+        &SettingImpl_LineDelayPx, device));
+    if (err)
         goto error;
     OScDev_PtrArray_Append(*settings, lineDelayPx);
 
     OScDev_Setting *checkSync;
-    if (OScDev_CHECK(err, OScDev_Setting_Create(
-                              &checkSync, "CheckSyncBeforeAcquisition",
-                              OScDev_ValueType_Bool, &SettingImpl_CheckSync,
-                              device)))
+    err = OScDev_Error_AsRichError(OScDev_Setting_Create(
+        &checkSync, "CheckSyncBeforeAcquisition", OScDev_ValueType_Bool,
+        &SettingImpl_CheckSync, device));
+    if (err)
         goto error;
     OScDev_PtrArray_Append(*settings, checkSync);
 
     OScDev_Setting *saveFiles;
-    if (OScDev_CHECK(err,
-                     OScDev_Setting_Create(&saveFiles, "FLIMFileSaving",
-                                           OScDev_ValueType_Bool,
-                                           &SettingImpl_SaveFiles, device)))
+    err = OScDev_Error_AsRichError(OScDev_Setting_Create(
+        &saveFiles, "FLIMFileSaving", OScDev_ValueType_Bool,
+        &SettingImpl_SaveFiles, device));
+    if (err)
         goto error;
     OScDev_PtrArray_Append(*settings, saveFiles);
 
     OScDev_Setting *fileNamePrefix;
-    if (OScDev_CHECK(
-            err, OScDev_Setting_Create(&fileNamePrefix, "FLIMFileNamePrefix",
-                                       OScDev_ValueType_String,
-                                       &SettingImpl_FileNamePrefix, device)))
+    err = OScDev_Error_AsRichError(OScDev_Setting_Create(
+        &fileNamePrefix, "FLIMFileNamePrefix", OScDev_ValueType_String,
+        &SettingImpl_FileNamePrefix, device));
+    if (err)
         goto error;
     OScDev_PtrArray_Append(*settings, fileNamePrefix);
 
     OScDev_Setting *senderPort;
-    if (OScDev_CHECK(err, OScDev_Setting_Create(
-                              &senderPort, "SendFLIMHistogramsToUDPPort",
-                              OScDev_ValueType_Int32, &SettingImpl_SenderPort,
-                              device)))
+    err = OScDev_Error_AsRichError(OScDev_Setting_Create(
+        &senderPort, "SendFLIMHistogramsToUDPPort", OScDev_ValueType_Int32,
+        &SettingImpl_SenderPort, device));
+    if (err)
         goto error;
     OScDev_PtrArray_Append(*settings, senderPort);
 
     OScDev_Setting *sdtCompression;
-    if (OScDev_CHECK(
-            err, OScDev_Setting_Create(&sdtCompression, "SDTCompression",
-                                       OScDev_ValueType_Bool,
-                                       &SettingImpl_SDTCompression, device)))
+    err = OScDev_Error_AsRichError(OScDev_Setting_Create(
+        &sdtCompression, "SDTCompression", OScDev_ValueType_Bool,
+        &SettingImpl_SDTCompression, device));
+    if (err)
         goto error;
     OScDev_PtrArray_Append(*settings, sdtCompression);
 
@@ -568,9 +571,10 @@ OScDev_Error BH_MakeSettings(OScDev_Device *device,
         char name[64];
         snprintf(name, sizeof(name), "RateCounter-%s", rateCounters[i]);
         OScDev_Setting *rateCounter;
-        if (OScDev_CHECK(err, OScDev_Setting_Create(
-                                  &rateCounter, name, OScDev_ValueType_Float64,
-                                  &SettingImpl_RateCounter, data))) {
+        err = OScDev_Error_AsRichError(
+            OScDev_Setting_Create(&rateCounter, name, OScDev_ValueType_Float64,
+                                  &SettingImpl_RateCounter, data));
+        if (err) {
             free(data);
             goto error;
         }
@@ -585,5 +589,6 @@ error:
     }
     free(*settings);
     *settings = NULL;
-    return err;
+    return OScDev_Error_ReturnAsCode(
+        OScDev_Error_Wrap(err, "Failed to create settings"));
 }

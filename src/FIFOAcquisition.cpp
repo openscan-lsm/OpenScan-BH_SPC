@@ -1,5 +1,6 @@
 #include "FIFOAcquisition.hpp"
 
+#include <OpenScanDeviceLib.h>
 #include <Spcm_def.h>
 
 #include <chrono>
@@ -9,14 +10,30 @@
 #include <string>
 #include <thread>
 
-int ConfigureDeviceForFIFOAcquisition(short module) {
-    short err;
-
-    err = SPC_test_id(module);
-    if (err < 0) {
-        return err;
+OScDev_RichError *CreateBHSPCError(short bhErr) {
+    static char *domainName = nullptr;
+    if (domainName == nullptr) {
+        domainName = "BH_SPC";
+        OScDev_Error_RegisterCodeDomain(domainName,
+                                        OScDev_ErrorCodeFormat_I16);
     }
-    short model = err;
+
+    char buf[OScDev_MAX_STR_SIZE];
+    short metaErr = SPC_get_error_string(bhErr, buf, OScDev_MAX_STR_LEN);
+    if (metaErr < 0)
+        return OScDev_Error_CreateWithCode(domainName, bhErr,
+                                           "Unknown BH SPC error");
+    return OScDev_Error_CreateWithCode(domainName, bhErr, buf);
+}
+
+OScDev_RichError *ConfigureDeviceForFIFOAcquisition(short module) {
+    short bhErr;
+
+    bhErr = SPC_test_id(module);
+    if (bhErr < 0) {
+        return CreateBHSPCError(bhErr);
+    }
+    short model = bhErr;
 
     // Note: In addition to the model number, we can also get the (FPGA)
     // firmware version. However, we use FIFO mode (not FIFO Imaging mode),
@@ -43,16 +60,14 @@ int ConfigureDeviceForFIFOAcquisition(short module) {
         mode = 1;
         break;
     default:
-        return 1; // Unsupported model
-        // Note: SPC-600/630 could be supported, but data format will be
-        // different.
+        return OScDev_Error_Create("Unsupported SPC model");
     }
 
     SPCdata parameters;
     std::memset(&parameters, 0, sizeof(parameters)); // Defensive
-    err = SPC_get_parameters(module, &parameters);
-    if (err < 0) {
-        return err;
+    bhErr = SPC_get_parameters(module, &parameters);
+    if (bhErr < 0) {
+        return CreateBHSPCError(bhErr);
     }
 
     parameters.mode = mode;
@@ -74,20 +89,20 @@ int ConfigureDeviceForFIFOAcquisition(short module) {
     parameters.pixel_clock = 0;   // Not used in FIFO mode
     parameters.adc_zoom = 0;      // Not relevant in FIFO mode
 
-    err = SPC_set_parameters(module, &parameters);
-    if (err < 0) {
-        return err;
+    bhErr = SPC_set_parameters(module, &parameters);
+    if (bhErr < 0) {
+        return CreateBHSPCError(bhErr);
     }
 
-    return 0;
+    return OScDev_RichError_OK;
 }
 
-int SetMarkerPolarities(short module, uint16_t enabledBits,
-                        uint16_t polarityBits) {
+OScDev_RichError *SetMarkerPolarities(short module, uint16_t enabledBits,
+                                      uint16_t polarityBits) {
     float value;
-    short err = SPC_get_parameter(module, ROUTING_MODE, &value);
-    if (err < 0) {
-        return err;
+    short bhErr = SPC_get_parameter(module, ROUTING_MODE, &value);
+    if (bhErr < 0) {
+        return CreateBHSPCError(bhErr);
     }
 
     // Bits  8-11: enable marker
@@ -98,20 +113,21 @@ int SetMarkerPolarities(short module, uint16_t enabledBits,
     mask |= (polarityBits & 0xf) << 12;
     value = mask;
 
-    err = SPC_set_parameter(module, ROUTING_MODE, value);
-    if (err < 0) {
-        return err;
+    bhErr = SPC_set_parameter(module, ROUTING_MODE, value);
+    if (bhErr < 0) {
+        return CreateBHSPCError(bhErr);
     }
 
-    return 0;
+    return OScDev_RichError_OK;
 }
 
 // Prepare for acquisition and determine necessary parameters for data handling
 // fileHeader: set to first 4 bytes of the (4- or 6-byte) .spc file header
 // fifoType: set to FIFO_48, FIFO_32, FIFO_130, etc.
-int SetUpAcquisition(short module, bool checkSync, char fileHeader[4],
-                     short *fifoType, int *macroTimeClockTenthNs) {
-    short err;
+OScDev_RichError *SetUpAcquisition(short module, bool checkSync,
+                                   char fileHeader[4], short *fifoType,
+                                   int *macroTimeClockTenthNs) {
+    short bhErr;
 
     // Somewhat surprisingly, there are no parameters that we need to set for
     // each acquisition. This is because different scan rates and image sizes
@@ -121,26 +137,26 @@ int SetUpAcquisition(short module, bool checkSync, char fileHeader[4],
     // good to fail early.
     if (checkSync) {
         short syncState;
-        err = SPC_get_sync_state(module, &syncState);
-        if (err < 0) {
-            return err;
+        bhErr = SPC_get_sync_state(module, &syncState);
+        if (bhErr < 0) {
+            return CreateBHSPCError(bhErr);
         }
         if (syncState != 1) {
-            return 1; // TODO Error: No sync (or overload)
+            return OScDev_Error_Create("SYNC not detected or overloaded");
         }
     }
 
     // Get the event data format and .spc file header
     short streamType;
     unsigned int fileHeaderInt;
-    err = SPC_get_fifo_init_vars(module, fifoType, &streamType,
-                                 macroTimeClockTenthNs, &fileHeaderInt);
-    if (err < 0) {
-        return err;
+    bhErr = SPC_get_fifo_init_vars(module, fifoType, &streamType,
+                                   macroTimeClockTenthNs, &fileHeaderInt);
+    if (bhErr < 0) {
+        return CreateBHSPCError(bhErr);
     }
     memcpy(fileHeader, &fileHeaderInt, 4);
 
-    return 0;
+    return OScDev_RichError_OK;
 }
 
 bool IsStandardFIFO(short fifoType) {
@@ -272,7 +288,7 @@ error:
 }
 
 template <typename E>
-static std::tuple<int, std::future<void>>
+static std::tuple<OScDev_RichError *, std::future<void>>
 StartAcquisition(short module, std::shared_ptr<EventBufferPool<E>> pool,
                  std::shared_ptr<EventStream<E>> stream,
                  std::shared_future<void> stopRequested,
@@ -283,13 +299,13 @@ StartAcquisition(short module, std::shared_ptr<EventBufferPool<E>> pool,
 
     // Start of measurement must be synchronous (on current thread) so that
     // the device is actually armed before we return.
-    short err = SPC_start_measurement(module);
-    if (err < 0) {
-        PushError(err, stream.get(), completion.get());
+    short bhErr = SPC_start_measurement(module);
+    if (bhErr < 0) {
+        PushError(bhErr, stream.get(), completion.get());
 
         std::promise<void> done;
         done.set_value();
-        return std::make_tuple(static_cast<int>(err), done.get_future());
+        return std::make_tuple(CreateBHSPCError(bhErr), done.get_future());
     }
 
     auto finish =
@@ -298,10 +314,10 @@ StartAcquisition(short module, std::shared_ptr<EventBufferPool<E>> pool,
                        RunAcquisition<E>(module, pool.get(), stream.get(),
                                          stopRequested, completion.get());
                    });
-    return std::make_tuple(0, std::move(finish));
+    return std::make_tuple(OScDev_RichError_OK, std::move(finish));
 }
 
-std::tuple<int, std::future<void>> StartAcquisitionStandardFIFO(
+std::tuple<OScDev_RichError *, std::future<void>> StartAcquisitionStandardFIFO(
     short module, std::shared_ptr<EventBufferPool<BHSPCEvent>> pool,
     std::shared_ptr<EventStream<BHSPCEvent>> stream,
     std::shared_future<void> stopRequested,

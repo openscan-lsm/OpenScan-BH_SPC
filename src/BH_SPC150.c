@@ -56,7 +56,7 @@ static void PopulateDefaultParameters(struct BH_PrivateData *data) {
     data->checkSyncBeforeAcq = true;
 }
 
-static OScDev_Error EnsureFLIMBoardInitialized(void) {
+static OScDev_RichError *EnsureFLIMBoardInitialized(void) {
     // There is a mismatch between the OpenScan model of initializing a device
     // with how BH SPC works: multiple BH modules (boards) are initialized at
     // once using a single .ini file. We will need to figure out a workaround
@@ -65,10 +65,11 @@ static OScDev_Error EnsureFLIMBoardInitialized(void) {
 
     if (g_BH_initialized) {
         // Reject second instance, as we don't yet support multiple modules
-        return OScDev_Error_Device_Already_Open;
+        return OScDev_Error_Create("Device already open");
     }
 
-    OScDev_Error ret = OScDev_Error_Unknown;
+    OScDev_RichError *err = OScDev_RichError_OK;
+
     ss8str mmPathSpcmIni;
     ss8str iniFileName;
     ss8str msg;
@@ -105,7 +106,7 @@ static OScDev_Error EnsureFLIMBoardInitialized(void) {
             }
         }
         ss8_cat_ch(&msg, ')');
-        OScDev_Log_Error(NULL, ss8_cstr(&msg));
+        err = OScDev_Error_Create(ss8_cstr(&msg));
         goto finish;
     }
 
@@ -125,30 +126,29 @@ static OScDev_Error EnsureFLIMBoardInitialized(void) {
                              (short)maxlen);
         ss8_set_len_to_cstrlen(&msg);
 
-        OScDev_Log_Error(NULL, ss8_cstr(&msg));
+        err = OScDev_Error_Create(ss8_cstr(&msg));
         goto finish;
     }
 
     g_BH_initialized = true;
-    ret = OScDev_OK;
 
 finish:
     ss8_destroy(&msg);
     ss8_destroy(&iniFileName);
     ss8_destroy(&mmPathSpcmIni);
-    return ret;
+    return err;
 }
 
-static OScDev_Error DeinitializeFLIMBoard(void) {
+static OScDev_RichError *DeinitializeFLIMBoard(void) {
     if (!g_BH_initialized)
-        return OScDev_OK;
+        return OScDev_RichError_OK;
 
     // See comment where we call SPC_init(). We assume only one module is in
     // use.
     SPC_close();
 
     g_BH_initialized = false;
-    return OScDev_OK;
+    return OScDev_RichError_OK;
 }
 
 static OScDev_Error BH_EnumerateInstances(OScDev_PtrArray **devices) {
@@ -162,13 +162,12 @@ static OScDev_Error BH_EnumerateInstances(OScDev_PtrArray **devices) {
     data->moduleNr = 0;
 
     OScDev_Device *device;
-    OScDev_Error err;
-    if (OScDev_CHECK(
-            err, OScDev_Device_Create(&device, &BH_TCSPC_Device_Impl, data))) {
-        char msg[OScDev_MAX_STR_LEN + 1] =
-            "Failed to create device for BH SPC";
-        OScDev_Log_Error(device, msg);
-        return err;
+    OScDev_RichError *err;
+    err = OScDev_Error_AsRichError(
+        OScDev_Device_Create(&device, &BH_TCSPC_Device_Impl, data));
+    if (err) {
+        err = OScDev_Error_Wrap(err, "Failed to create device for BH SPC");
+        return OScDev_Error_ReturnAsCode(err);
     }
 
     PopulateDefaultParameters(GetData(device));
@@ -196,21 +195,22 @@ static OScDev_Error BH_GetName(OScDev_Device *device, char *name) {
 }
 
 static OScDev_Error BH_Open(OScDev_Device *device) {
-    OScDev_Error err;
-    if (OScDev_CHECK(err, EnsureFLIMBoardInitialized()))
-        return err;
+    OScDev_RichError *err = OScDev_RichError_OK;
+    err = EnsureFLIMBoardInitialized();
+    if (err)
+        return OScDev_Error_ReturnAsCode(err);
 
     PopulateDefaultParameters(GetData(device));
 
-    if (OScDev_CHECK(err, InitializeDeviceForAcquisition(device)))
-        return err;
+    err = InitializeDeviceForAcquisition(device);
+    if (err)
+        return OScDev_Error_ReturnAsCode(err);
 
     GetData(device)->rates =
         StartRateCounterMonitor(GetData(device)->moduleNr, 0.25);
 
     ++g_openDeviceCount;
 
-    OScDev_Log_Debug(device, "BH SPC board initialized");
     return OScDev_OK;
 }
 
@@ -222,9 +222,11 @@ static OScDev_Error BH_Close(OScDev_Device *device) {
 
     --g_openDeviceCount;
 
-    OScDev_Error err;
-    if (g_openDeviceCount == 0 && OScDev_CHECK(err, DeinitializeFLIMBoard()))
-        return err;
+    if (g_openDeviceCount == 0) {
+        OScDev_RichError *err = DeinitializeFLIMBoard();
+        if (err)
+            return OScDev_Error_ReturnAsCode(err);
+    }
 
     return OScDev_OK;
 }
@@ -267,20 +269,19 @@ static OScDev_Error Arm(OScDev_Device *device, OScDev_Acquisition *acq) {
     OScDev_Acquisition_IsClockRequested(acq, &useClock);
     OScDev_Acquisition_IsScannerRequested(acq, &useScanner);
     OScDev_Acquisition_IsDetectorRequested(acq, &useDetector);
-    if (useClock || useScanner || !useDetector)
-        return OScDev_Error_Unsupported_Operation;
+    if (useClock || useScanner || !useDetector) {
+        return OScDev_Error_ReturnAsCode(OScDev_Error_Create(
+            "Unsupported operation (only detector role supported)"));
+    }
 
     OScDev_ClockSource clockSource;
     OScDev_Acquisition_GetClockSource(acq, &clockSource);
-    if (clockSource != OScDev_ClockSource_External)
-        return OScDev_Error_Unsupported_Operation;
-
-    int err = StartAcquisition(device, acq);
-    if (err != 0) {
-        return err;
+    if (clockSource != OScDev_ClockSource_External) {
+        return OScDev_Error_ReturnAsCode(OScDev_Error_Create(
+            "Unsupported operation (only external clock source supported)"));
     }
 
-    return OScDev_OK;
+    return OScDev_Error_ReturnAsCode(StartAcquisition(device, acq));
 }
 
 static OScDev_Error Start(OScDev_Device *device) {
@@ -334,4 +335,5 @@ static OScDev_Error GetDeviceImpls(OScDev_PtrArray **impls) {
 OScDev_MODULE_IMPL = {
     .displayName = "Becker & Hickl TCSPC Module",
     .GetDeviceImpls = GetDeviceImpls,
+    .supportsRichErrors = true,
 };
