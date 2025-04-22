@@ -4,7 +4,10 @@
 #include "RateCounters.h"
 
 #include <Spcm_def.h>
+#include <ss8str.h>
 
+#include <assert.h>
+#include <limits.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -65,40 +68,75 @@ static OScDev_Error EnsureFLIMBoardInitialized(void) {
         return OScDev_Error_Device_Already_Open;
     }
 
+    OScDev_Error ret = OScDev_Error_Unknown;
+    ss8str mmPathSpcmIni;
+    ss8str iniFileName;
+    ss8str msg;
+    ss8_init(&mmPathSpcmIni);
+    ss8_init(&iniFileName);
+    ss8_init(&msg);
+
     const char *iniFileCandidates[] = {
         "spcm.ini",
         "sspcm.ini", // For compatibility with earlier versions of this module
+        NULL,        // Space for $MICROMANAGER_PATH/spcm.ini
         NULL,
     };
+    // A bit of a hack (since OpenScan is not necessarily running in MM), but
+    // allow spcm.ini (not sspcm.ini) to be in $MICROMANAGER_PATH (e.g., for
+    // use with pymmcore-plus).
+    const char *mmpath = getenv("MICROMANAGER_PATH");
+    if (mmpath != NULL) {
+        ss8_copy_cstr(&mmPathSpcmIni, mmpath);
+        if (!ss8_is_empty(&mmPathSpcmIni)) {
+            ss8_cat_ch(&mmPathSpcmIni, '/');
+            ss8_cat_cstr(&mmPathSpcmIni, "spcm.ini");
+            iniFileCandidates[2] = ss8_cstr(&mmPathSpcmIni);
+        }
+    }
+
     size_t iniFileIndex = IndexOfFirstFileThatExists(iniFileCandidates);
     if (iniFileIndex < 0) {
-        OScDev_Log_Error(NULL, "Cannot find the SPCM .ini file");
-        return OScDev_Error_Unknown; // TODO
+        ss8_copy_cstr(&msg, "Cannot find the SPCM .ini file (tried ");
+        for (size_t i = 0; iniFileCandidates[i] != NULL; ++i) {
+            ss8_cat_cstr(&msg, iniFileCandidates[i]);
+            if (iniFileCandidates[i + 1] != NULL) {
+                ss8_cat_cstr(&msg, ", ");
+            }
+        }
+        ss8_cat_ch(&msg, ')');
+        OScDev_Log_Error(NULL, ss8_cstr(&msg));
+        goto finish;
     }
 
-    // SPC_init() wants non-const string, so make a copy.
-    char iniFileName[1024];
-    snprintf(iniFileName, sizeof(iniFileName), "%s",
-             iniFileCandidates[iniFileIndex]);
-
-    short spcErr = SPC_init(iniFileName);
+    // SPC_init() wants a non-const string, so make a copy.
+    ss8_copy_cstr(&iniFileName, iniFileCandidates[iniFileIndex]);
+    short spcErr = SPC_init(ss8_mutable_cstr(&iniFileName));
     if (spcErr < 0) {
-        char msg[OScDev_MAX_STR_LEN + 1] = "Cannot initialize BH SPC using ";
-        strcat(msg, iniFileName);
-        strcat(msg, ": ");
-        char bhMsg[OScDev_MAX_STR_LEN + 1];
-        SPC_get_error_string(spcErr, bhMsg, sizeof(bhMsg));
-        strncat(msg, bhMsg, sizeof(msg) - strlen(msg) - 1);
-        bhMsg[sizeof(bhMsg) - 1] = '\0';
-        OScDev_Log_Error(NULL, msg);
-        return OScDev_Error_Unknown; // TODO: error reporting
-    }
+        ss8_copy_cstr(&msg, "Cannot initialize BH SPC using ");
+        ss8_cat(&msg, &iniFileName);
+        ss8_cat_cstr(&msg, ": ");
 
-    // Note: The force-initialize code that used to be here was removed after
-    // testing to ensure it is not necessary (even after a crash).
+        size_t offset = ss8_len(&msg);
+        ss8_set_len(&msg, OScDev_MAX_STR_LEN);
+        size_t maxlen = ss8_len(&msg) - offset;
+        assert(maxlen < SHRT_MAX);
+        SPC_get_error_string(spcErr, ss8_mutable_cstr_suffix(&msg, offset),
+                             (short)maxlen);
+        ss8_set_len_to_cstrlen(&msg);
+
+        OScDev_Log_Error(NULL, ss8_cstr(&msg));
+        goto finish;
+    }
 
     g_BH_initialized = true;
-    return OScDev_OK;
+    ret = OScDev_OK;
+
+finish:
+    ss8_destroy(&msg);
+    ss8_destroy(&iniFileName);
+    ss8_destroy(&mmPathSpcmIni);
+    return ret;
 }
 
 static OScDev_Error DeinitializeFLIMBoard(void) {
