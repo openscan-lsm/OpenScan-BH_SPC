@@ -51,21 +51,22 @@ static void RequestAcquisitionStop(AcqState *acqState) {
     }
 }
 
-static int ResetAcquisitionState(OScDev_Device *device) {
+static OScDev_RichError *ResetAcquisitionState(OScDev_Device *device) {
     if (GetData(device)->acqState) {
         using namespace std::chrono_literals;
         if (GetData(device)->acqState->finish.wait_for(0s) !=
             std::future_status::ready) {
-            return 1; // Acquisition already in progress
+            return OScDev_Error_Create("Acquisition already running");
         }
         delete GetData(device)->acqState;
         GetData(device)->acqState = nullptr;
     }
     GetData(device)->acqState = new AcqState();
-    return 0;
+    return OScDev_RichError_OK;
 }
 
-extern "C" int InitializeDeviceForAcquisition(OScDev_Device *device) {
+extern "C" OScDev_RichError *
+InitializeDeviceForAcquisition(OScDev_Device *device) {
     return ConfigureDeviceForFIFOAcquisition(GetData(device)->moduleNr);
 }
 
@@ -88,7 +89,7 @@ static int32_t PixelsToMacroTime(double pixels, double pixelRateHz,
         std::round(1e10 * pixels / pixelRateHz / unitsTenthNs));
 }
 
-static int ConfigureMarkers(OScDev_Device *device) {
+static OScDev_RichError *ConfigureMarkers(OScDev_Device *device) {
     auto data = GetData(device);
     uint16_t enabled = 0;
     uint16_t risingEdgeActive = 0;
@@ -100,7 +101,7 @@ static int ConfigureMarkers(OScDev_Device *device) {
     return SetMarkerPolarities(data->moduleNr, enabled, risingEdgeActive);
 }
 
-static int CheckMarkers(OScDev_Device *device) {
+static OScDev_RichError *CheckMarkers(OScDev_Device *device) {
     auto data = GetData(device);
 
     // Pixel, line, and frame markers must all differ if enabled
@@ -110,47 +111,60 @@ static int CheckMarkers(OScDev_Device *device) {
     }
     if (data->lineMarkerBit < NUM_MARKER_BITS) {
         if (usedMarkers.test(data->lineMarkerBit)) {
-            return 1; // Duplicate marker assignment
+            return OScDev_Error_Create("Duplicate marker assignment");
         }
         usedMarkers.set(data->lineMarkerBit);
     }
     if (data->frameMarkerBit < NUM_MARKER_BITS) {
         if (usedMarkers.test(data->frameMarkerBit)) {
-            return 1; // Duplicate marker assignment
+            return OScDev_Error_Create("Duplicate marker assignment");
         }
     }
 
     // Line marker must be assigned and enabled (until we support pixel marker)
     if (data->lineMarkerBit >= NUM_MARKER_BITS) {
-        return 1; // Line marker required
+        return OScDev_Error_Create("Line marker is required");
     }
     if (data->markerActiveEdges[data->lineMarkerBit] ==
         MarkerPolarityDisabled) {
-        return 1; // Line marker required
+        return OScDev_Error_Create("Line marker is required");
     }
 
-    return 0;
+    return OScDev_RichError_OK;
 }
 
-static void WaitForCompletionAndLog(OScDev_Device *device, AcqState *acqState,
-                                    std::string const &proc) {
+static OScDev_RichError *WaitForCompletionAndLog(OScDev_Device *device,
+                                                 AcqState *acqState,
+                                                 std::string const &proc) {
     auto messages = acqState->finish.get();
     if (messages.empty()) {
         OScDev_Log_Info(device, (proc + " finished successfully").c_str());
+        return OScDev_RichError_OK;
     } else {
         OScDev_Log_Error(device, (proc + " failed with error(s):").c_str());
         for (auto const &m : messages) {
             OScDev_Log_Error(device, m.c_str());
         }
+
+        std::string errors;
+        for (auto const &m : messages) {
+            errors += m;
+            errors += "; ";
+        }
+        errors.erase(errors.size() - 2, 2); // Remove the extra "; "
+        return OScDev_Error_Create(
+            (proc + " failed with error(s): " + errors).c_str());
     }
 }
 
-extern "C" int StartAcquisition(OScDev_Device *device,
-                                OScDev_Acquisition *acq) {
+extern "C" OScDev_RichError *StartAcquisition(OScDev_Device *device,
+                                              OScDev_Acquisition *acq) {
     OScDev_Log_Info(device, "Starting acquisition setup");
 
-    int err = ResetAcquisitionState(device);
-    if (err != 0)
+    OScDev_RichError *err = OScDev_RichError_OK;
+
+    err = ResetAcquisitionState(device);
+    if (err)
         return err;
     auto acqState = GetData(device)->acqState;
     std::shared_future<void> stopRequested =
@@ -163,11 +177,11 @@ extern "C" int StartAcquisition(OScDev_Device *device,
     unstarted.set_value({});
 
     err = ConfigureMarkers(device);
-    if (err != 0)
+    if (err)
         return err;
 
     err = CheckMarkers(device);
-    if (err != 0)
+    if (err)
         return err;
     uint32_t lineMarkerBit = GetData(device)->lineMarkerBit;
 
@@ -178,7 +192,7 @@ extern "C" int StartAcquisition(OScDev_Device *device,
 
     std::bitset<MAX_NUM_CHANNELS> channelMask = GetData(device)->channelMask;
     if (channelMask.count() < 1) {
-        return 1; // No channel enabled
+        return OScDev_Error_Create("No channel enabled");
     }
 
     bool accumulateIntensity = GetData(device)->accumulateIntensity;
@@ -192,7 +206,7 @@ extern "C" int StartAcquisition(OScDev_Device *device,
         lineMarkersAtLineEnds = true;
         break;
     default:
-        return 1; // Unimplemented mode
+        return OScDev_Error_Create("Unimplemented line marker mode");
     }
     double lineDelayPixels = GetData(device)->lineDelayPx;
     std::string fileNamePrefix(
@@ -206,10 +220,10 @@ extern "C" int StartAcquisition(OScDev_Device *device,
     int macroTimeUnitsTenthNs;
     err = SetUpAcquisition(GetData(device)->moduleNr, checkSync, fileHeader,
                            &fifoType, &macroTimeUnitsTenthNs);
-    if (err != 0)
+    if (err)
         return err;
     if (!IsStandardFIFO(fifoType)) {
-        return 1; // Unsupported data format
+        return OScDev_Error_Create("Unsupported data format");
     }
 
     uint32_t lineTime =
@@ -299,8 +313,7 @@ extern "C" int StartAcquisition(OScDev_Device *device,
         stream->Send({});
         OScDev_Log_Error(
             device, "Failed during acquisition setup; waiting for cleanup");
-        WaitForCompletionAndLog(device, acqState, "Acquisition setup");
-        return 1;
+        return WaitForCompletionAndLog(device, acqState, "Acquisition setup");
     }
 
     // 48k events = ~5 ms at 10M events/s
@@ -310,12 +323,12 @@ extern "C" int StartAcquisition(OScDev_Device *device,
         GetData(device)->moduleNr, pool, stream, stopRequested, completion);
     err = std::get<0>(err_and_finish);
     acqState->acquisitionFinish = std::move(std::get<1>(err_and_finish));
-    if (err != 0) {
+    if (err) {
         // A synchronous error occurred while starting acquisition
         OScDev_Log_Error(device,
                          "Failed to start acquisition; waiting for cleanup");
-        WaitForCompletionAndLog(device, acqState, "Starting acquisition");
-        return err;
+        return WaitForCompletionAndLog(device, acqState,
+                                       "Starting acquisition");
     }
 
     OScDev_Log_Info(device, "Started acquisition");
@@ -329,7 +342,8 @@ extern "C" int StartAcquisition(OScDev_Device *device,
     acqState->logStopFinish =
         std::async(std::launch::async, [device, acqState] {
             OScDev_Log_Info(device, "Waiting for acquisition to finish");
-            WaitForCompletionAndLog(device, acqState, "Acquisition");
+            OScDev_Error_Destroy(
+                WaitForCompletionAndLog(device, acqState, "Acquisition"));
         });
 
     return 0;
