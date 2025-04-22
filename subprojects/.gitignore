@@ -5,9 +5,11 @@
 
 # Other subprojects
 /OpenScanLib/
+/ssstr/
 
 # List of our .wrap files (because we do want to ignore any transitive
 # dependency wraps)
 /*.wrap
 !/OpenScanLib.wrap
 !/rapidjson.wrap
+!/ssstr.wrap

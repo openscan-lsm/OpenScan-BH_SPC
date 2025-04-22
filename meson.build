@@ -60,6 +60,11 @@ rapidjson_dep = dependency(
     fallback: ['rapidjson', 'rapidjson_dep'],
 )
 
+ssstr_dep = dependency(
+    'ssstr',
+    fallback: 'ssstr',
+)
+
 shlwapi_dep = cc.find_library('shlwapi')
 ws2_32_dep = cc.find_library('Ws2_32')
 
@@ -118,6 +123,7 @@ osdev = shared_module(
         bh_spcm_dep,
         libzip_dep,
         rapidjson_dep,
+        ssstr_dep,
         shlwapi_dep,
         ws2_32_dep,
         flimevents_dep,
