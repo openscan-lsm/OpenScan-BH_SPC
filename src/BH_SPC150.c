@@ -27,10 +27,10 @@ static bool FileExists(const char *name) {
     return false;
 }
 
-static size_t IndexOfFirstFileThatExists(const char **candidates) {
+static int IndexOfFirstFileThatExists(const char **candidates) {
     for (size_t i = 0; candidates[i] != NULL; ++i) {
         if (FileExists(candidates[i])) {
-            return i;
+            return (int)i;
         }
     }
     return -1;
@@ -96,7 +96,7 @@ static OScDev_RichError *EnsureFLIMBoardInitialized(void) {
         }
     }
 
-    size_t iniFileIndex = IndexOfFirstFileThatExists(iniFileCandidates);
+    int iniFileIndex = IndexOfFirstFileThatExists(iniFileCandidates);
     if (iniFileIndex < 0) {
         ss8_copy_cstr(&msg, "Cannot find the SPCM .ini file (tried ");
         for (size_t i = 0; iniFileCandidates[i] != NULL; ++i) {
