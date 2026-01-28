@@ -51,6 +51,14 @@ meson compile -C builddir
 
 This results in the module `OpenScanBHSPC.osdev` in `builddir`.
 
+## Usage
+
+`OpenScanBHSPC.osdev` requires two files from the [TCSPC Package](https://www.becker-hickl.com/products/tcspc-package/#product-download) to be available at runtime:
+* `C:\Program Files (x86)\BH\SPCM\DLL\spcm64.dll` must be findable by the OS
+* `C:\Program Files (x86)\BH\SPCM\scpm.ini` must be findable by this library
+
+The primary use case for this project is within [Micro-Manager](https://micro-manager.org/). To use this library within Micro-Manager, it is easiest to copy `OpenScanBHSPC.osdev` **and** the two additional files into the micro-manager installation folder.
+
 ## Code of Conduct
 
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg)](https://github.com/openscan-lsm/OpenScan/blob/main/CODE_OF_CONDUCT.md)
