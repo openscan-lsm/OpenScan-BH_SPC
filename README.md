@@ -59,6 +59,22 @@ This results in the module `OpenScanBHSPC.osdev` in `builddir`.
 
 The primary use case for this project is within [Micro-Manager](https://micro-manager.org/). To use this library within Micro-Manager, it is easiest to copy `OpenScanBHSPC.osdev` **and** the two additional files into the micro-manager installation folder.
 
+## Emulation
+
+Using the [TCSPC Package](https://www.becker-hickl.com/products/tcspc-package/#product-download), you can emulate a virtual SPC module for use within OpenScan.
+
+To emulate a module, simply launch `C:\Program Files (x86)\BH\SPCM\spcm64.exe`. When the intro window loads, you can uncheck and then check any of the modules (e.g. `M1`), and then click `Apply` to enter emulation mode. Clicking `OK` then starts emulation and launches the main SPCM window.
+
+Note that the device being emulated can be cahnged based on the dropdown at the bottom of the intro window.
+
+> [!IMPORTANT]
+> For OpenScan to behave correctly when emulating, you must specify which device is being emualated. To do this, edit `spcm.ini`:
+> ```
+> simulation = <your device>     ; 0 - hardware mode(default) ,
+>                    ; >0 - simulation mode (see spcm_def.h for possible values)
+> ```
+> The number `<your_device>` comes from `C:\Program Files (x86)\BH\SPCM\DLL\Spcm_def.h` - you can find the list by searching for `possible modes of DLL operation`.
+
 ## Code of Conduct
 
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg)](https://github.com/openscan-lsm/OpenScan/blob/main/CODE_OF_CONDUCT.md)
