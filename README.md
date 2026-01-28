@@ -2,7 +2,7 @@
 
 ## How to build
 
-Only x64 builds are curretnly supported.
+Only x64 builds are currently supported.
 
 - Install Visual Studio 2019 or later with C++ Desktop Development,
   [Meson](https://github.com/mesonbuild/meson/releases), and
