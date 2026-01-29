@@ -2,7 +2,7 @@
 
 ## How to build
 
-Only x64 builds are curretnly supported.
+Only x64 builds are currently supported.
 
 - Install Visual Studio 2019 or later with C++ Desktop Development,
   [Meson](https://github.com/mesonbuild/meson/releases), and
@@ -50,6 +50,23 @@ meson compile -C builddir
 ```
 
 This results in the module `OpenScanBHSPC.osdev` in `builddir`.
+
+## Usage
+
+`OpenScanBHSPC.osdev` requires two files from the [TCSPC Package](https://www.becker-hickl.com/products/tcspc-package/#product-download) to be available at runtime:
+* `C:\Program Files (x86)\BH\SPCM\DLL\spcm64.dll` must be findable by the OS
+* `C:\Program Files (x86)\BH\SPCM\scpm.ini` must be findable by this library
+
+The primary use case for this project is within [Micro-Manager](https://micro-manager.org/). To use this library within Micro-Manager, it is easiest to copy `OpenScanBHSPC.osdev` **and** the two additional files into the micro-manager installation folder.
+
+## Simulation
+
+SPC modules can be simulated in OpenScan. Simulation will occur when OpenScan cannot find a physical device, however you must specify which device is being simulated. To do this, edit `spcm.ini`:
+```
+simulation = <your device>     ; 0 - hardware mode(default) ,
+                   ; >0 - simulation mode (see spcm_def.h for possible values)
+```
+The number `<your_device>` comes from `C:\Program Files (x86)\BH\SPCM\DLL\Spcm_def.h` - you can find the list by searching for `possible modes of DLL operation`.
 
 ## Code of Conduct
 
