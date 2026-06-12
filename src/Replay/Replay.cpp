@@ -55,7 +55,7 @@ template <typename T> class HistogramSink : public HistogramProcessor<T> {
 };
 
 template <typename T>
-static std::shared_ptr<PixelPhotonProcessor> MakeNoncumulativeHistogrammer(
+static std::shared_ptr<PixelPhotonProcessor> MakeNonAccumulatedHistogrammer(
     uint32_t histoBits, uint32_t inputBits, uint32_t width, uint32_t height,
     std::shared_ptr<HistogramProcessor<T>> downstream) {
     Histogram<T> frameHisto(histoBits, inputBits, true, width, height);
@@ -65,14 +65,14 @@ static std::shared_ptr<PixelPhotonProcessor> MakeNoncumulativeHistogrammer(
 
 template <typename T>
 static std::shared_ptr<PixelPhotonProcessor>
-MakeCumulativeHistogrammer(uint32_t histoBits, uint32_t inputBits,
-                           uint32_t width, uint32_t height,
-                           std::shared_ptr<HistogramProcessor<T>> downstream) {
-    Histogram<T> cumulHisto(histoBits, inputBits, true, width, height);
-    cumulHisto.Clear();
-    return MakeNoncumulativeHistogrammer<T>(
+MakeAccumulatedHistogrammer(uint32_t histoBits, uint32_t inputBits,
+                            uint32_t width, uint32_t height,
+                            std::shared_ptr<HistogramProcessor<T>> downstream) {
+    Histogram<T> accumHisto(histoBits, inputBits, true, width, height);
+    accumHisto.Clear();
+    return MakeNonAccumulatedHistogrammer<T>(
         histoBits, inputBits, width, height,
-        std::make_shared<HistogramAccumulator<T>>(std::move(cumulHisto),
+        std::make_shared<HistogramAccumulator<T>>(std::move(accumHisto),
                                                   downstream));
 }
 
@@ -127,7 +127,7 @@ void replay(std::string const &inFilename,
             continue;
         auto histoSink =
             std::make_shared<HistogramSink<SampleType>>(n, sender);
-        auto histoProc = MakeCumulativeHistogrammer<SampleType>(
+        auto histoProc = MakeAccumulatedHistogrammer<SampleType>(
             histoBits, inputBits, width, height, histoSink);
         histogrammers[n] = histoProc;
         ++n;
