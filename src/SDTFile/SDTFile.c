@@ -81,10 +81,18 @@ static int WriteSDTIdentification(FILE *fp, const struct SDTFileData *data) {
     return ret;
 }
 
-static int WriteSDTEmptySetup(FILE *fp) {
-    const char *setup = "*SETUP" NEWLINE "*END" NEWLINE NEWLINE;
-    size_t len = strlen(setup);
-    size_t written = fwrite(setup, 1, len, fp);
+static int WriteSDTEmptySetup(FILE *fp, const struct SDTFileData *data) {
+    char buf[128];
+    int len = snprintf(buf, sizeof(buf),
+        "*SETUP" NEWLINE
+        "#SP [SP_IMG_X,I,%u]" NEWLINE
+        "#SP [SP_IMG_Y,I,%u]" NEWLINE
+        "*END" NEWLINE NEWLINE,
+        data->width, data->height);
+    if (len < 0 || len >= sizeof(buf)) {
+        return 1; // Error
+    }
+    size_t written = fwrite(buf, 1, len, fp);
     if (written < len) {
         return 1; // Write error
     }
@@ -481,7 +489,7 @@ WriteSDTFileP(FILE *fp, const struct SDTFileData *data,
     header.info_length = (short)(ftell(fp) - header.info_offs);
 
     header.setup_offs = ftell(fp);
-    err = WriteSDTEmptySetup(fp);
+    err = WriteSDTEmptySetup(fp, data);
     if (err)
         return err;
     header.setup_length = (short)(ftell(fp) - header.setup_offs);
