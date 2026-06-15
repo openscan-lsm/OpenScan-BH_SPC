@@ -78,7 +78,7 @@ class HistogramSink : public HistogramProcessor<SampleType> {
     }
 
     void HandleFrame(Histogram<SampleType> const &histogram) override {
-        // Only the final cumulative histogram is written to SDT.
+        // Only the final accumulated histogram is written to SDT.
 
         if (dataSender) {
             dataSender->SetHistogram(channel, histogram);
@@ -130,7 +130,7 @@ static void PumpDeviceEvents(
 }
 
 template <typename T>
-static std::shared_ptr<PixelPhotonProcessor> MakeNoncumulativeHistogrammer(
+static std::shared_ptr<PixelPhotonProcessor> MakeNonAccumulatedHistogrammer(
     uint32_t histoBits, uint32_t inputBits, uint32_t width, uint32_t height,
     std::shared_ptr<HistogramProcessor<T>> downstream) {
     Histogram<T> frameHisto(histoBits, inputBits, true, width, height);
@@ -140,14 +140,14 @@ static std::shared_ptr<PixelPhotonProcessor> MakeNoncumulativeHistogrammer(
 
 template <typename T>
 static std::shared_ptr<PixelPhotonProcessor>
-MakeCumulativeHistogrammer(uint32_t histoBits, uint32_t inputBits,
-                           uint32_t width, uint32_t height,
-                           std::shared_ptr<HistogramProcessor<T>> downstream) {
-    Histogram<T> cumulHisto(histoBits, inputBits, true, width, height);
-    cumulHisto.Clear();
-    return MakeNoncumulativeHistogrammer<T>(
+MakeAccumulatedHistogrammer(uint32_t histoBits, uint32_t inputBits,
+                            uint32_t width, uint32_t height,
+                            std::shared_ptr<HistogramProcessor<T>> downstream) {
+    Histogram<T> accumHisto(histoBits, inputBits, true, width, height);
+    accumHisto.Clear();
+    return MakeNonAccumulatedHistogrammer<T>(
         histoBits, inputBits, width, height,
-        std::make_shared<HistogramAccumulator<T>>(std::move(cumulHisto),
+        std::make_shared<HistogramAccumulator<T>>(std::move(accumHisto),
                                                   downstream));
 }
 
@@ -174,9 +174,9 @@ SetUpProcessing(uint32_t width, uint32_t height, uint32_t maxFrames,
         acquisition, stopFunc, completion);
     auto intensityAccumulator =
         accumulateIntensity
-            ? MakeCumulativeHistogrammer<SampleType>(
+            ? MakeAccumulatedHistogrammer<SampleType>(
                   intensityBits, inputBits, width, height, intensitySink)
-            : MakeNoncumulativeHistogrammer<SampleType>(
+            : MakeNonAccumulatedHistogrammer<SampleType>(
                   intensityBits, inputBits, width, height, intensitySink);
 
     // We construct a single-channel intensity image as the sum of all enabled
@@ -203,7 +203,7 @@ SetUpProcessing(uint32_t width, uint32_t height, uint32_t maxFrames,
                 continue;
             auto histoSink = std::make_shared<HistogramSink>(
                 n, histogramWriter, histogramSender);
-            auto histoProc = MakeCumulativeHistogrammer<SampleType>(
+            auto histoProc = MakeAccumulatedHistogrammer<SampleType>(
                 histoBits, inputBits, width, height, histoSink);
             histogrammers[i] = histoProc;
             ++n;
