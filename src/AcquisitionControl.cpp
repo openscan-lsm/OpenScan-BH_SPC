@@ -35,7 +35,6 @@ struct AcqState {
     // Futures from std::async that we need to hold.
     std::future<void> eventPumpingFinish;
     std::future<void> acquisitionFinish;
-    std::future<void> logStopFinish;
 };
 
 // All stopping of acquisition must be through this function
@@ -133,19 +132,12 @@ static OScDev_RichError *CheckMarkers(OScDev_Device *device) {
     return OScDev_RichError_OK;
 }
 
-static OScDev_RichError *WaitForCompletionAndLog(OScDev_Device *device,
-                                                 AcqState *acqState,
-                                                 std::string const &proc) {
+static OScDev_RichError *WaitForCompletionError(AcqState *acqState,
+                                                std::string const &proc) {
     auto messages = acqState->finish.get();
     if (messages.empty()) {
-        OScDev_Log_Info(device, (proc + " finished successfully").c_str());
         return OScDev_RichError_OK;
     } else {
-        OScDev_Log_Error(device, (proc + " failed with error(s):").c_str());
-        for (auto const &m : messages) {
-            OScDev_Log_Error(device, m.c_str());
-        }
-
         std::string errors;
         for (auto const &m : messages) {
             errors += m;
@@ -236,8 +228,8 @@ extern "C" OScDev_RichError *StartAcquisition(OScDev_Device *device,
 
     auto completion = std::make_shared<AcquisitionCompletion>(
         [acqState]() mutable { RequestAcquisitionStop(acqState); },
-        [device](std::string const &m) {
-            OScDev_Log_Debug(device, m.c_str());
+        [device](OScDev_LogLevel level, std::string const &m) {
+            OScDev_Log(device, level, m.c_str());
         });
     acqState->finish = completion->GetCompletion();
 
@@ -313,7 +305,7 @@ extern "C" OScDev_RichError *StartAcquisition(OScDev_Device *device,
         stream->Send({});
         OScDev_Log_Error(
             device, "Failed during acquisition setup; waiting for cleanup");
-        return WaitForCompletionAndLog(device, acqState, "Acquisition setup");
+        return WaitForCompletionError(acqState, "Acquisition setup");
     }
 
     // 48k events = ~5 ms at 10M events/s
@@ -327,8 +319,7 @@ extern "C" OScDev_RichError *StartAcquisition(OScDev_Device *device,
         // A synchronous error occurred while starting acquisition
         OScDev_Log_Error(device,
                          "Failed to start acquisition; waiting for cleanup");
-        return WaitForCompletionAndLog(device, acqState,
-                                       "Starting acquisition");
+        return WaitForCompletionError(acqState, "Starting acquisition");
     }
 
     OScDev_Log_Info(device, "Started acquisition");
@@ -337,14 +328,6 @@ extern "C" OScDev_RichError *StartAcquisition(OScDev_Device *device,
     if (sdtWriter) {
         sdtWriter->FinishPostAcquisitionData();
     }
-
-    // Arrange to log the end of acquisition.
-    acqState->logStopFinish =
-        std::async(std::launch::async, [device, acqState] {
-            OScDev_Log_Info(device, "Waiting for acquisition to finish");
-            OScDev_Error_Destroy(
-                WaitForCompletionAndLog(device, acqState, "Acquisition"));
-        });
 
     return 0;
 }
