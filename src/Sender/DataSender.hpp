@@ -7,13 +7,11 @@
 
 #include <FLIMEvents/Histogram.hpp>
 
-#include <chrono>
-#include <future>
 #include <memory>
-#include <thread>
+#include <mutex>
 
 // Send frame histograms using a simple UDP + file protocol.
-class DataSender final : public std::enable_shared_from_this<DataSender> {
+class DataSender final {
     unsigned const nChannels;
 
     std::mutex mutex;
@@ -27,8 +25,6 @@ class DataSender final : public std::enable_shared_from_this<DataSender> {
     std::unique_ptr<UDPSender> sender;
 
     std::shared_ptr<AcquisitionCompletion> downstream;
-
-    std::future<void> linger;
 
     void SendError(std::string const &message) {
         bool series_started;
@@ -117,13 +113,6 @@ class DataSender final : public std::enable_shared_from_this<DataSender> {
         if (downstream) {
             downstream->HandleFinish("DataSender");
             downstream.reset();
-
-            linger = std::async(std::launch::async, [self =
-                                                         shared_from_this()] {
-                // Give the receiver some time to read the last frames before
-                // TempDir is deleted.
-                std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-            });
         }
     }
 

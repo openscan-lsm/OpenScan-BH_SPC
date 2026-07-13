@@ -35,6 +35,18 @@ struct AcqState {
     // Futures from std::async that we need to hold.
     std::future<void> eventPumpingFinish;
     std::future<void> acquisitionFinish;
+    std::future<void> senderLingerFinish;
+
+    std::promise<void> cancelLinger;
+
+    ~AcqState() {
+        // Wake the sender linger (if any) so the future's destructor below
+        // does not wait out the full linger period.
+        try {
+            cancelLinger.set_value();
+        } catch (std::future_error const &) {
+        }
+    }
 };
 
 // All stopping of acquisition must be through this function
@@ -279,6 +291,21 @@ extern "C" OScDev_RichError *StartAcquisition(OScDev_Device *device,
         dataSender = std::make_shared<DataSender>(
             static_cast<unsigned>(channelMask.count()), senderPort,
             completion);
+
+        // Keep the sender (and its temp dir) alive for a while after
+        // acquisition completion so the receiver has time to read the last
+        // frames. Canceled early when AcqState is destroyed so Close /
+        // re-Arm need not wait.
+        acqState->senderLingerFinish = std::async(
+            std::launch::async,
+            [dataSender, finish = acqState->finish,
+             cancel = acqState->cancelLinger.get_future()]() mutable {
+                finish.wait();
+                cancel.wait_for(std::chrono::seconds(2));
+                // Release now: the closure itself is not destroyed until
+                // the shared state is (at the next Arm or Close).
+                dataSender.reset();
+            });
     }
 
     std::shared_ptr<EventStream<BHSPCEvent>> stream;
@@ -358,4 +385,6 @@ extern "C" void WaitForAcquisitionToFinish(OScDev_Device *device) {
         acqState->acquisitionFinish.wait();
     if (acqState->eventPumpingFinish.valid())
         acqState->eventPumpingFinish.wait();
+    // senderLingerFinish is intentionally excluded: the sender linger
+    // touches nothing of the host's and is joined by ~AcqState.
 }
