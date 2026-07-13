@@ -349,8 +349,13 @@ extern "C" bool IsAcquisitionRunning(OScDev_Device *device) {
 }
 
 extern "C" void WaitForAcquisitionToFinish(OScDev_Device *device) {
-    if (GetData(device)->acqState == nullptr)
+    AcqState *acqState = GetData(device)->acqState;
+    if (acqState == nullptr)
         return;
 
-    GetData(device)->acqState->finish.get();
+    acqState->finish.get();
+    if (acqState->acquisitionFinish.valid())
+        acqState->acquisitionFinish.wait();
+    if (acqState->eventPumpingFinish.valid())
+        acqState->eventPumpingFinish.wait();
 }
