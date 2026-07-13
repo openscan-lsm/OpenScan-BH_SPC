@@ -1,4 +1,5 @@
 /packagecache/
+.wraplock
 
 # Subprojects with version numbers (downloaded via wrap)
 /*-*/

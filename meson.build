@@ -149,5 +149,9 @@ replay = executable(
         rapidjson_dep,
         flimevents_dep,
         ws2_32_dep,
+        openscandevicelib_dep.partial_dependency(
+            includes: true,
+            compile_args: true,
+        ),
     ],
 )

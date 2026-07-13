@@ -7,7 +7,6 @@
 
 #include <cstring>
 #include <ctime>
-#include <future>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -16,7 +15,7 @@
 
 // This is a high-level wrapper around SDTFile.{h,c} adding state and
 // concurrency management.
-class SDTWriter final : public std::enable_shared_from_this<SDTWriter> {
+class SDTWriter final {
     std::string filename;
     SDTFileData data;
     std::vector<SDTFileChannelData> channelData;
@@ -28,7 +27,6 @@ class SDTWriter final : public std::enable_shared_from_this<SDTWriter> {
     bool canceled;
     bool writeStarted;
 
-    std::future<void> asyncWriteCompletion;
     std::shared_ptr<AcquisitionCompletion> downstream;
 
     void SendError(std::string const &message) {
@@ -50,8 +48,10 @@ class SDTWriter final : public std::enable_shared_from_this<SDTWriter> {
     //   (This assumes that all post-acquisition data comes from the same
     //   thread; if this is not the case, we may need to protect more under
     //   our mutex.)
-    // - Once all data is set, we assume no more calls from upstream; now
-    //   the writing can happen asynchronously.
+    // - Once all data is set, we assume no more calls from upstream; the
+    //   write happens synchronously on the thread that supplied the last
+    //   piece of data (normally the event-pump thread). The caller's
+    //   shared_ptr keeps this object alive for the duration of the write.
 
   public:
     SDTWriter(std::string const &filename, unsigned nChannels,
@@ -149,7 +149,8 @@ class SDTWriter final : public std::enable_shared_from_this<SDTWriter> {
     // TODO Functions to set post-acquisition data
 
     // Indicate that no more post-acquisition data will be set (thus
-    // writing can commence). Does not block. Not thread safe.
+    // writing can commence). May block to write the file if this is the
+    // last trigger. Not thread safe.
     void FinishPostAcquisitionData() {
         {
             std::lock_guard<std::mutex> hold(mutex);
@@ -159,8 +160,8 @@ class SDTWriter final : public std::enable_shared_from_this<SDTWriter> {
         StartWritingFileIfReady();
     }
 
-    // Return value indicates write finish; caller must keep histogram valid
-    // until the future completes. Not thread safe.
+    // May synchronously write the file when this is the last trigger. Not
+    // thread safe.
     void SetHistogram(unsigned channel, Histogram<uint16_t> &&histogram) {
         {
             std::lock_guard<std::mutex> hold(mutex);
@@ -194,27 +195,23 @@ class SDTWriter final : public std::enable_shared_from_this<SDTWriter> {
             writeStarted = true;
         }
 
-        asyncWriteCompletion =
-            std::async(std::launch::async, [self = shared_from_this()] {
-                std::vector<uint16_t const *> histoDataPtrs;
-                for (auto const &h : self->histograms) {
-                    histoDataPtrs.emplace_back(h.Get());
-                }
+        std::vector<uint16_t const *> histoDataPtrs;
+        for (auto const &h : histograms) {
+            histoDataPtrs.emplace_back(h.Get());
+        }
 
-                std::vector<SDTFileChannelData const *> chanDataPtrs;
-                for (size_t i = 0; i < self->channelData.size(); ++i) {
-                    chanDataPtrs.emplace_back(&self->channelData[i]);
-                }
+        std::vector<SDTFileChannelData const *> chanDataPtrs;
+        for (size_t i = 0; i < channelData.size(); ++i) {
+            chanDataPtrs.emplace_back(&channelData[i]);
+        }
 
-                int err = WriteSDTFile(self->filename.c_str(), &self->data,
-                                       chanDataPtrs.data(),
-                                       histoDataPtrs.data(), &self->params);
-                if (err) {
-                    self->SendError("Write error in SDT file");
-                } else if (self->downstream) {
-                    self->downstream->HandleFinish("SDTWriter");
-                    self->downstream.reset();
-                }
-            });
+        int err = WriteSDTFile(filename.c_str(), &data, chanDataPtrs.data(),
+                               histoDataPtrs.data(), &params);
+        if (err) {
+            SendError("Write error in SDT file");
+        } else if (downstream) {
+            downstream->HandleFinish("SDTWriter");
+            downstream.reset();
+        }
     }
 };

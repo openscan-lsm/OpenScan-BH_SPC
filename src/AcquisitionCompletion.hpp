@@ -1,5 +1,7 @@
 #pragma once
 
+#include <OpenScanDeviceLib.h>
+
 #include <functional>
 #include <future>
 #include <mutex>
@@ -17,7 +19,20 @@ class AcquisitionCompletion final {
     std::function<void()> cancelFunction;
     std::promise<std::vector<std::string>> signalCompletion;
     std::shared_future<std::vector<std::string>> completion;
-    std::function<void(std::string const &)> logFunction;
+    std::function<void(OScDev_LogLevel, std::string const &)> logFunction;
+
+    void Complete() {
+        if (errors.empty()) {
+            logFunction(OScDev_LogLevel_Info,
+                        "Acquisition finished successfully");
+        } else {
+            logFunction(OScDev_LogLevel_Error,
+                        "Acquisition failed with error(s):");
+            for (auto const &m : errors)
+                logFunction(OScDev_LogLevel_Error, m);
+        }
+        signalCompletion.set_value(errors);
+    }
 
   public:
     template <typename F, typename G>
@@ -28,7 +43,8 @@ class AcquisitionCompletion final {
 
     template <typename F>
     AcquisitionCompletion(F cancelFunc)
-        : AcquisitionCompletion(cancelFunc, [](std::string const &) {}) {}
+        : AcquisitionCompletion(cancelFunc,
+                                [](OScDev_LogLevel, std::string const &) {}) {}
 
     std::shared_future<std::vector<std::string>> GetCompletion() {
         return completion;
@@ -37,7 +53,8 @@ class AcquisitionCompletion final {
     void AddProcess(std::string const &proc) {
         std::lock_guard<std::mutex> hold(mutex);
         ++unfinishedCount;
-        logFunction("AcquisitionCompletion: AddProcess " + proc);
+        logFunction(OScDev_LogLevel_Debug,
+                    "AcquisitionCompletion: AddProcess " + proc);
     }
 
     void HandleError(std::string const &message, std::string const &proc) {
@@ -51,15 +68,16 @@ class AcquisitionCompletion final {
             --unfinishedCount;
             allDone = unfinishedCount == 0;
         }
-        logFunction("AcquisitionCompletion: HandleError " + proc);
+        logFunction(OScDev_LogLevel_Debug,
+                    "AcquisitionCompletion: HandleError " + proc);
 
         if (firstError && cancelFunction) {
-            logFunction("AcquisitionCompletion: Calling cancel function");
+            logFunction(OScDev_LogLevel_Debug,
+                        "AcquisitionCompletion: Calling cancel function");
             cancelFunction();
         }
         if (allDone) {
-            logFunction("AcquisitionCompletion: Completing");
-            signalCompletion.set_value(errors);
+            Complete();
         }
     }
 
@@ -71,11 +89,11 @@ class AcquisitionCompletion final {
             --unfinishedCount;
             allDone = unfinishedCount == 0;
         }
-        logFunction("AcquisitionCompletion: HandleFinish " + proc);
+        logFunction(OScDev_LogLevel_Debug,
+                    "AcquisitionCompletion: HandleFinish " + proc);
 
         if (allDone) {
-            logFunction("AcquisitionCompletion: completing");
-            signalCompletion.set_value(errors);
+            Complete();
         }
     }
 };
